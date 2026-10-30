@@ -1,0 +1,37 @@
+{{define "inbox.html"}}{{template "head" (dict "Title" "Inbox" "Refresh" false "Nav" .Nav)}}
+<h2>Inbox</h2>
+<p class="muted">Tasks that stopped to wait for a person. Answers go back to the agent as standard A2A messages and the task continues. <a href="/inbox">Refresh</a></p>
+{{if .Error}}<div class="error-box">{{.Error}}</div>{{end}}
+{{range .Items}}
+<div class="card">
+  <p><strong>{{.Task.AgentName}}</strong> <span class="pill {{state .Task.State}}">{{label .Task.State}}</span> <a class="mono muted" href="/tasks/{{.Task.ID}}">task …{{short .Task.ID}}</a></p>
+  {{with .Task.Status}}{{template "parts" .Parts}}{{end}}
+  {{if .Request}}
+  <form method="post" action="/inbox/{{.Task.ID}}">
+    {{range .Fields}}
+      {{if eq .Kind "decision"}}
+        <p><button class="primary" name="{{.Name}}" value="true">Approve</button> <button name="{{.Name}}" value="false">Reject</button></p>
+      {{else if eq .Kind "checkbox"}}
+        <label><input type="checkbox" name="{{.Name}}"> {{.Title}}</label>
+      {{else if eq .Kind "select"}}
+        <label for="{{.Name}}">{{.Title}}</label><select id="{{.Name}}" name="{{.Name}}">{{range .Options}}<option>{{.}}</option>{{end}}</select>
+      {{else if eq .Kind "number"}}
+        <label for="{{.Name}}">{{.Title}}</label><input type="number" step="any" id="{{.Name}}" name="{{.Name}}" {{if .Required}}required{{end}}>
+      {{else}}
+        <label for="{{.Name}}">{{.Title}}</label><input type="text" id="{{.Name}}" name="{{.Name}}" {{if .Required}}required{{end}}>
+      {{end}}
+    {{end}}
+    <label for="_answered_by">Your name (kept in the audit trail)</label>
+    <input type="text" id="_answered_by" name="_answered_by" value="finance@acme.example">
+    {{if not (hasDecision .Fields)}}<p><button class="primary">Send answer</button></p>{{end}}
+  </form>
+  {{else if .Challenge}}
+  <p><a class="button primary" href="{{.Challenge.URL}}" target="_blank" rel="noopener">Connect {{.Challenge.Integration}}</a> <span class="muted">for {{.Challenge.User}}; the task continues by itself once access is granted.</span></p>
+  {{else}}
+  <p class="muted">This task waits for a free-text reply from the client that started it.</p>
+  {{end}}
+</div>
+{{else}}
+<p class="muted">Nothing is waiting. Tasks show up here when they enter INPUT_REQUIRED or AUTH_REQUIRED.</p>
+{{end}}
+{{template "foot"}}{{end}}

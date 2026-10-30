@@ -1,0 +1,39 @@
+{{define "head"}}<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+{{if .Refresh}}<meta http-equiv="refresh" content="2">{{end}}
+<title>{{.Title}} · Console</title>
+<style>
+  :root { --bg:#fafaf9; --fg:#1c1917; --muted:#78716c; --line:#e7e5e4; --card:#fff;
+          --ok:#15803d; --run:#1d4ed8; --wait:#b45309; --bad:#b91c1c; --accent:#1d4ed8; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#1c1917; --fg:#f5f5f4; --muted:#a8a29e; --line:#44403c; --card:#292524;
+          --ok:#4ade80; --run:#93c5fd; --wait:#fbbf24; --bad:#f87171; --accent:#93c5fd; } }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--fg); font:15px/1.5 ui-sans-serif, system-ui, sans-serif; }
+  main { max-width:1080px; margin:0 auto; padding:24px 16px 64px; }
+  header { display:flex; flex-wrap:wrap; gap:16px; align-items:baseline; border-bottom:1px solid var(--line); padding-bottom:12px; margin-bottom:20px; }
+  header h1 { font-size:20px; margin:0 8px 0 0; } header a { color:var(--muted); text-decoration:none; } header a:hover { color:var(--fg); }
+  .pill { display:inline-block; padding:0 8px; border-radius:999px; font-size:12px; font-weight:600; border:1px solid currentColor; white-space:nowrap; }
+  .ok { color:var(--ok); } .run { color:var(--run); } .wait { color:var(--wait); } .bad { color:var(--bad); }
+  .muted { color:var(--muted); } .mono, code, pre { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size:13px; }
+  pre { background:var(--card); border:1px solid var(--line); border-radius:6px; padding:10px; overflow-x:auto; margin:6px 0; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:16px; margin-bottom:16px; }
+  .tree { list-style:none; padding-left:0; margin:0; } .tree .tree { padding-left:22px; border-left:2px solid var(--line); margin-left:8px; }
+  .row { padding:10px 0; border-bottom:1px solid var(--line); }
+  .row a.title { font-weight:600; color:var(--fg); text-decoration:none; } .row a.title:hover { text-decoration:underline; }
+  table { width:100%; border-collapse:collapse; } th, td { text-align:left; padding:6px 8px; border-bottom:1px solid var(--line); vertical-align:top; }
+  th { font-size:12px; text-transform:uppercase; letter-spacing:.04em; color:var(--muted); }
+  button, .button { font:inherit; padding:7px 14px; border-radius:6px; border:1px solid var(--line); background:var(--bg); color:var(--fg); cursor:pointer; text-decoration:none; display:inline-block; }
+  button.primary, .button.primary { background:var(--accent); border-color:var(--accent); color:#fff; }
+  label { display:block; margin:8px 0 4px; font-weight:600; } input[type=text], input[type=number], select { width:100%; max-width:420px; padding:6px 8px; font:inherit; }
+  .error-box { border:1px solid var(--bad); color:var(--bad); padding:8px 12px; border-radius:6px; margin-bottom:16px; }
+  .badge { background:var(--wait); color:#fff; border-radius:999px; padding:0 7px; font-size:12px; margin-left:4px; }
+</style>
+</head>
+<body><main>
+<header><h1>Console</h1><a href="/">Tasks</a><a href="/inbox">Inbox</a>{{range .Nav}}<a href="{{.Href}}">{{.Label}}</a>{{end}}<a href="/api/tasks">JSON</a></header>
+{{end}}
+{{define "foot"}}</main></body></html>{{end}}
+{{define "parts"}}{{range partsOf .}}{{if .Text}}<p>{{.Text}}</p>{{else if .JSON}}<pre>{{.JSON}}</pre>{{else if .URL}}<p><a href="{{.URL}}">{{.URL}}</a></p>{{end}}{{end}}{{end}}

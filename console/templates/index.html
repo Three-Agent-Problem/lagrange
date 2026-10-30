@@ -1,0 +1,21 @@
+{{define "node"}}<li class="row">
+  <a class="title" href="/tasks/{{.Task.ID}}">{{.Task.AgentName}}</a>
+  <span class="mono muted">task …{{short .Task.ID}}</span>
+  <span class="pill {{state .Task.State}}">{{label .Task.State}}</span>
+  {{with .Task.TimeBreakdown}}<span class="muted"> · {{range $i, $e := .}}{{if $i}} · {{end}}{{$e}}{{end}}</span>{{end}}
+  {{with summary .Task.Status}}<div class="muted">{{.}}</div>{{end}}
+  {{if .Children}}<ul class="tree">{{range .Children}}{{template "node" .}}{{end}}</ul>{{end}}
+</li>{{end}}
+{{define "index.html"}}{{template "head" (dict "Title" "Tasks" "Refresh" true "Nav" .Nav)}}
+{{if .Waiting}}<div class="card"><strong>{{.Waiting}} task(s) waiting on a person.</strong> <a href="/inbox">Open the inbox</a></div>{{end}}
+<h2>Tasks across agents</h2>
+<p class="muted">Every task the observed agents run, nested under the task that delegated it. Times show how long each task spent working and waiting.</p>
+<ul class="tree">{{range .Roots}}{{template "node" .}}{{else}}<li class="muted">No tasks yet. Send a message to an observed agent.</li>{{end}}</ul>
+{{if .Messages}}
+<h2>Direct replies</h2>
+<p class="muted">Agents that answered with a plain message instead of creating a task (for example quotes).</p>
+<table><tr><th>When</th><th>Agent</th><th>Reply</th></tr>
+{{range .Messages}}<tr><td class="muted">{{since .At}}</td><td>{{.AgentName}}</td><td class="mono">{{.Summary}}</td></tr>{{end}}
+</table>
+{{end}}
+{{template "foot"}}{{end}}

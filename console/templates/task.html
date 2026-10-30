@@ -1,0 +1,22 @@
+{{define "task.html"}}{{template "head" (dict "Title" "Task" "Refresh" true "Nav" .Nav)}}
+{{with .Task}}
+<h2>{{.AgentName}} <span class="pill {{state .State}}">{{label .State}}</span></h2>
+<p class="mono muted">task {{.ID}} · context {{.ContextID}} · agent <a href="{{.AgentURL}}/.well-known/agent-card.json">{{.AgentURL}}</a></p>
+{{with .TimeBreakdown}}<p>{{range $i, $e := .}}{{if $i}} · {{end}}{{$e}}{{end}}</p>{{end}}
+{{if .Waiting}}<p><a class="button primary" href="/inbox">Answer in the inbox</a></p>{{end}}
+{{end}}
+{{with .Parent}}<p>Delegated by <a href="/tasks/{{.ID}}">{{.AgentName}} …{{short .ID}}</a></p>{{end}}
+{{if .Children}}<div class="card"><strong>Delegated to</strong><ul>{{range .Children}}<li><a href="/tasks/{{.ID}}">{{.AgentName}} …{{short .ID}}</a> <span class="pill {{state .State}}">{{label .State}}</span></li>{{end}}</ul></div>{{end}}
+
+{{with .Task.Status}}<div class="card"><strong>Latest status</strong>{{template "parts" .Parts}}</div>{{end}}
+
+<h3>Timeline</h3>
+{{$start := .Task.FirstSeen}}
+<table><tr><th>Time</th><th>Event</th><th>State</th><th>Detail</th></tr>
+{{range .Task.Events}}<tr><td class="mono muted">{{offset .At $start}}</td><td>{{.Kind}}</td><td>{{if .State}}<span class="pill {{state .State}}">{{label .State}}</span>{{end}}</td><td>{{.Summary}}</td></tr>{{end}}
+</table>
+
+{{if .Task.Artifacts}}<h3>Artifacts</h3>
+{{range .Task.Artifacts}}<div class="card"><strong>{{if .Name}}{{.Name}}{{else}}{{.ID}}{{end}}</strong>{{with .Description}} <span class="muted">{{.}}</span>{{end}}{{template "parts" .Parts}}</div>{{end}}
+{{end}}
+{{template "foot"}}{{end}}

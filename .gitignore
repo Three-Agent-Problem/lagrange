@@ -1,0 +1,17 @@
+# Binaries and test output
+/bin/
+*.exe
+*.test
+*.out
+coverage.*
+
+# Local workspace files (the knowledge repo's scripts/bootstrap.sh writes go.work one level up)
+go.work
+go.work.sum
+
+# Secrets and editor/OS noise
+.env
+.env.*
+.DS_Store
+.idea/
+.vscode/
