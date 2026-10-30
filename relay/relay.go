@@ -85,6 +85,9 @@ func (r *Relay) Execute(ctx context.Context, ec *a2asrv.ExecutorContext) iter.Se
 			return
 		}
 		rec := r.recorder(ctx, ec, addr)
+		if ec.StoredTask != nil && ec.Message != nil {
+			rec.input(ec.Message, firstNonEmpty(userAttr(ec.User, AttrAnsweredBy), userName(ec.User)))
+		}
 		emit := func(ev a2a.Event) bool {
 			rec.record(ev)
 			return yield(ev, nil)
@@ -126,7 +129,7 @@ func (r *Relay) Cancel(ctx context.Context, ec *a2asrv.ExecutorContext) iter.Seq
 		addr, err := r.Directory.Address(ctx, ec.Tenant)
 		if err == nil && addr.Kind == directory.KindAgent {
 			if link, _ := r.Links.Get(ctx, ec.TaskID); link != nil && link.RemoteTaskID != "" {
-				if client, err := r.client(ctx, addr, ec, r.anyTransport(addr)); err == nil {
+				if client, err := r.client(ctx, addr, ec, r.anyTransport(addr), link.ParentTaskID); err == nil {
 					if _, err := client.CancelTask(ctx, &a2a.CancelTaskRequest{ID: link.RemoteTaskID}); err != nil {
 						r.log().Info("relay: the agent did not cancel its task", "address", addr.Handle, "error", err)
 					}
@@ -236,7 +239,7 @@ func (r *Relay) forward(ctx context.Context, ec *a2asrv.ExecutorContext, addr *d
 		}
 	}()
 
-	client, err := r.client(ctx, addr, ec, transport)
+	client, err := r.client(ctx, addr, ec, transport, tr.rec.parent)
 	if err != nil {
 		return err
 	}
@@ -359,8 +362,16 @@ func (unreachable) RoundTrip(*http.Request) (*http.Response, error) {
 }
 
 // client builds an A2A client for the agent over transport, from the agent's card.
-func (r *Relay) client(ctx context.Context, addr *directory.Address, ec *a2asrv.ExecutorContext, transport http.RoundTripper) (*a2aclient.Client, error) {
-	httpClient := &http.Client{Transport: transport}
+// Every exchange with the agent is recorded under the platform task.
+func (r *Relay) client(ctx context.Context, addr *directory.Address, ec *a2asrv.ExecutorContext, transport http.RoundTripper, parent a2a.TaskID) (*a2aclient.Client, error) {
+	sender := ""
+	if ec.User != nil {
+		sender = ec.User.Name
+	}
+	httpClient := &http.Client{Transport: r.Activity.Transport(transport, activity.Exchange{
+		Direction: activity.DirOut, TaskID: string(ec.TaskID), ParentTaskID: string(parent), ContextID: ec.ContextID,
+		Sender: sender, Recipient: addr.Handle,
+	})}
 	card := addr.Card
 	if card == nil || len(card.SupportedInterfaces) == 0 {
 		fetched, err := FetchCard(ctx, httpClient, addr.Endpoint)
@@ -371,10 +382,6 @@ func (r *Relay) client(ctx context.Context, addr *directory.Address, ec *a2asrv.
 		if err := r.Directory.SetCard(ctx, addr.Handle, card); err != nil {
 			r.log().Warn("relay: storing card failed", "address", addr.Handle, "error", err)
 		}
-	}
-	sender := ""
-	if ec.User != nil {
-		sender = ec.User.Name
 	}
 	return a2aclient.NewFromCard(ctx, card,
 		a2aclient.WithJSONRPCTransport(httpClient),
@@ -589,4 +596,18 @@ func (t *translator) restamp(m *a2a.Message) *a2a.Message {
 	out.ContextID = t.ec.ContextID
 	out.ReferenceTasks = nil
 	return &out
+}
+
+func userName(u *a2asrv.User) string {
+	if u == nil {
+		return ""
+	}
+	return u.Name
+}
+
+func firstNonEmpty(a, b string) string {
+	if a != "" {
+		return a
+	}
+	return b
 }

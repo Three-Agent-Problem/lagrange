@@ -1,4 +1,4 @@
-import { Bot, Inbox, LogOut, Moon, Network, Sun, Users } from 'lucide-react'
+import { Bot, Inbox, ListTree, LogOut, Moon, Network, Sun, Users } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { NavLink, Outlet } from 'react-router'
 import { cn } from '@/lib/cn'
@@ -63,6 +63,7 @@ export function Shell() {
         <div className="mt-3 flex w-full flex-col gap-1 px-2">
           {item('/', <Network size={19} />, 'Live')}
           {item('/inbox', <Inbox size={19} />, 'Inbox', waiting)}
+          {item('/runs', <ListTree size={19} />, 'Runs')}
           {item('/agents', <Bot size={19} />, 'Agents')}
           {item('/directory', <Users size={19} />, 'Directory')}
         </div>

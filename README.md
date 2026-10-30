@@ -16,17 +16,20 @@ A Lagrange point is where a body can hold still between two others. Lagrange is 
 - **Coding agents as addresses.** `lagrange tunnel --acp claude-agent-acp` turns any [Agent Client Protocol](https://agentclientprotocol.com) agent (Claude Code, Gemini CLI, opencode, Codex) into an A2A agent. Its "may I run this?" prompts land in your inbox.
 - **People in the loop.** A task sent to a person waits as `INPUT_REQUIRED` in their inbox. When an agent asks its sender a question (with a [structured input](https://github.com/a2aproject/a2a-go/tree/main/a2aext/structuredinput) schema, it becomes a form) the question shows up in the sender's inbox and on the graph, and is answered right there.
 - **Durable.** The platform owns every task: it stores tasks and events in Postgres and forwards the work to the agent. Work survives server restarts (a2a-go cluster mode on a Postgres work queue with leases) and agent restarts.
-- **A live view.** The web app shows addresses as nodes and tasks as moving packets on the edges between them, with mailbox depth, workers, waiting questions, a task tree with time in each state, and a replay of everything that happened.
+- **A live view.** The web app shows addresses as nodes and tasks as moving packets on the edges between them, with mailbox depth, workers and waiting questions.
+- **Runs, step by step.** Each request and everything it set off (delegations, quotes, questions, answers, webhooks) is one run. The Runs page tells it as numbered steps in plain words next to a sequence diagram, replays it one step at a time, and keeps the raw A2A events and every HTTP request and response behind each step. Find runs by status, participant or text.
 
 | | |
 |---|---|
-| ![Approving from the graph](docs/screenshots/live-graph-approval.png) | ![The task tree](docs/screenshots/task-tree.png) |
-| The buyer asks Ada to approve; she answers on the graph. | The task tree: the order and the order it placed with the supplier, with time in each state. |
-| ![Inbox](docs/screenshots/inbox.png) | ![Agents](docs/screenshots/agents.png) |
-| The inbox: a thread per contact, with the question as a form. | Agents: addresses, tunnels, workers, capacity, tokens. |
-| ![Directory](docs/screenshots/directory.png) | ![Replay](docs/screenshots/replay.png) |
-| The directory: people and agents, each with a card. | Replay any stretch of history at 1×, 4× or 16×. |
-| ![Dark live graph](docs/screenshots/live-graph-dark.png) | ![Dark task tree](docs/screenshots/task-tree-dark.png) |
+| ![A run, step by step](docs/screenshots/runs.png) | ![Replaying a run](docs/screenshots/runs-replay.png) |
+| A run: the order as numbered steps, with the quotes' actual prices, next to the sequence diagram. | Replay one run step by step (←/→, space); what hasn't happened yet is dimmed. |
+| ![The HTTP behind a step](docs/screenshots/runs-http.png) | ![All traffic of a run](docs/screenshots/runs-traffic.png) |
+| Every step opens to the HTTP requests and responses behind it. | All traffic: every call in, call to an agent and webhook, linked to its step. |
+| ![Approving from the graph](docs/screenshots/live-graph-approval.png) | ![Inbox](docs/screenshots/inbox.png) |
+| The buyer asks Ada to approve; she answers on the graph. | The inbox: a thread per contact, with the question as a form. |
+| ![Agents](docs/screenshots/agents.png) | ![Directory](docs/screenshots/directory.png) |
+| Agents: addresses, tunnels, workers, capacity, tokens. | The directory: people and agents, each with a card. |
+| ![Dark live graph](docs/screenshots/live-graph-dark.png) | ![Dark runs](docs/screenshots/runs-dark.png) |
 
 ## Run it
 
@@ -110,6 +113,7 @@ flowchart LR
 2. A worker takes it and runs the **relay**. For a person, the task waits as `INPUT_REQUIRED` with `awaiting` set. For an agent, the mailbox picks a tunnel session with a free slot, or the task waits (SUBMITTED, "queued") until one connects or frees up.
 3. The relay calls the agent with a normal A2A client over the tunnel, and restamps the agent's events with the platform's task ID. The link between the two task IDs is stored, so answers, cancels and redeliveries reach the same task on the agent.
 4. Every step is written to the activity log; `LISTEN/NOTIFY` and server-sent events carry it to the web app, which folds it into the graph with the same reducer that powers replay.
+5. Every HTTP exchange is recorded too: calls in at `/a/<handle>`, the relay's calls to agents, and webhooks through `/t/<handle>`. Bodies are kept up to 64 KB, and only a short allowlist of headers (never `Authorization`, cookies or tokens). `GET /api/runs/{id}` returns a run (the task nobody delegated, everything delegated from it, and the messages sent from those) with its entries and exchanges.
 
 | Package | What it does |
 |---|---|
@@ -119,7 +123,7 @@ flowchart LR
 | [`directory`](directory/) | Addresses (agents and people), tokens, users, sessions, stored cards. |
 | [`mailbox`](mailbox/) | Tunnel sessions per address, capacity, waiting deliveries. |
 | [`tunnel`](tunnel/) | The tunnel server and client (WebSocket + yamux, reconnects with backoff). |
-| [`activity`](activity/) | The activity log and its live stream. |
+| [`activity`](activity/) | The activity log and its live stream, and the recorder of every HTTP exchange. |
 | [`pg`](pg/) | Postgres: migrations, `taskstore.Store`, push config store, the work queue and event queue for a2a-go cluster mode. |
 | [`delegate`](delegate/delegate.go) | For agents: send your token and the current task with outgoing calls. |
 | [`web`](web/) | The React app (Vite, React Flow, Tailwind), embedded with `go:embed`. |
@@ -243,13 +247,16 @@ And two HTTP headers (gRPC metadata) that agents on the platform send with their
 - Pushes are fire-and-forget in a2a-go. If the console is down, it misses events.
 - On the platform, a task whose agent disconnects mid-task waits in the mailbox and is redelivered (followed if the agent still has it, sent again if not), at most 5 times per execution. Agents should treat a repeated message ID as the same request.
 - a2a-go's cluster-mode cancel can report a waiting task as not cancelable while the cancel is still running; the platform waits for the cancel to settle instead.
+- Recorded HTTP exchanges are kept forever for now (no pruning yet), up to 64 KB per body. They hold message contents, so treat the database as sensitive.
+- A run groups calls by the `Lagrange-Task` header. An agent that doesn't send it on its own calls still gets its tasks recorded, but as separate runs.
 
 ## Roadmap
 
-1. Signup, organizations and invites; changing passwords in the app.
-2. Slack and email notifications with answer links, SLA timers (remind, escalate, cancel), OpenTelemetry with `traceparent` across hops.
-3. Several Lagrange replicas behind one load balancer (cluster mode and `LISTEN/NOTIFY` are built for it; this release tests one replica).
-4. An MCP bridge, so MCP clients can message addresses.
+1. Coding agents for real: run `lagrange tunnel --acp claude-agent-acp` end to end, and a Claude-powered demo agent.
+2. Signup, organizations and invites; changing passwords in the app.
+3. Slack and email notifications with answer links, SLA timers (remind, escalate, cancel), OpenTelemetry with `traceparent` across hops.
+4. Several Lagrange replicas behind one load balancer (cluster mode and `LISTEN/NOTIFY` are built for it; this release tests one replica).
+5. An MCP bridge, so MCP clients can message addresses; pruning of recorded exchanges.
 
 ## Development
 

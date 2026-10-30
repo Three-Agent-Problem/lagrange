@@ -58,6 +58,18 @@ func (rec *recorder) add(e *activity.Entry) {
 	}
 }
 
+// input logs a message that continues the task, from who (the sender, or the person
+// answering on their behalf).
+func (rec *recorder) input(m *a2a.Message, who string) {
+	e := rec.entry(activity.KindInput)
+	e.Summary = Describe(m)
+	e.Data = map[string]any{"from": who}
+	if c := Preview(m.Parts, 4096); c != "" {
+		e.Data["content"] = c
+	}
+	rec.add(e)
+}
+
 // note logs something that isn't an A2A event, such as waiting in the mailbox.
 func (rec *recorder) note(kind, summary string) {
 	e := rec.entry(kind)
@@ -96,6 +108,9 @@ func (rec *recorder) record(ev a2a.Event) {
 		if ev.Artifact != nil {
 			e.Summary = ev.Artifact.Name
 			e.Data = map[string]any{"artifactId": string(ev.Artifact.ID), "append": ev.Append, "lastChunk": ev.LastChunk}
+			if c := Preview(ev.Artifact.Parts, 4096); c != "" {
+				e.Data["content"] = c
+			}
 		}
 		rec.add(e)
 
@@ -103,7 +118,14 @@ func (rec *recorder) record(ev a2a.Event) {
 		e := rec.entry(activity.KindMessage)
 		e.TaskID = ""
 		e.Summary = Describe(rec.ec.Message)
-		e.Data = map[string]any{"reply": Describe(ev)}
+		// callId is the task ID the call would have had: its exchanges are recorded under it.
+		e.Data = map[string]any{"reply": Describe(ev), "callId": string(rec.ec.TaskID)}
+		if c := Preview(rec.ec.Message.Parts, 4096); c != "" {
+			e.Data["request"] = c
+		}
+		if c := Preview(ev.Parts, 4096); c != "" {
+			e.Data["replyContent"] = c
+		}
 		rec.add(e)
 	}
 }
@@ -141,6 +163,28 @@ func Describe(m *a2a.Message) string {
 	s := strings.Join(parts, " ")
 	if r := []rune(s); len(r) > 160 {
 		s = string(r[:159]) + "…"
+	}
+	return s
+}
+
+// Preview renders parts for the activity log, up to n runes: text as is, data as JSON,
+// files by name.
+func Preview(parts []*a2a.Part, n int) string {
+	var out []string
+	for _, p := range parts {
+		switch {
+		case p.Text() != "":
+			out = append(out, p.Text())
+		case p.Data() != nil:
+			raw, _ := json.Marshal(p.Data())
+			out = append(out, string(raw))
+		case p.Filename != "":
+			out = append(out, "file: "+p.Filename)
+		}
+	}
+	s := strings.Join(out, "\n")
+	if r := []rune(s); len(r) > n {
+		s = string(r[:n-1]) + "…"
 	}
 	return s
 }

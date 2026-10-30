@@ -6,7 +6,7 @@ import { cn } from '@/lib/cn'
 import { useLive } from '@/store/live'
 import { isWaiting, normState, OUTSIDE } from '@/store/model'
 import { addressMap, useSession } from '@/store/session'
-import { Bubble } from '@/features/task/TaskView'
+import { Bubble } from '@/ui/Bubble'
 import { AnswerForm } from '@/ui/AnswerForm'
 import { Avatar } from '@/ui/Avatar'
 import { StateBadge } from '@/ui/StateBadge'
@@ -222,8 +222,8 @@ function TaskThread({ t, me, kind, onChange }: { t: TaskView; me: string; kind: 
       ))}
       <div className={cn('flex items-center gap-2', mine ? 'justify-end' : 'justify-start')}>
         <StateBadge state={state} />
-        <Link to={`/tasks/${t.id}`} className="flex items-center gap-1 text-[11px] font-semibold text-muted hover:text-accent">
-          <GitFork size={11} /> task tree
+        <Link to={`/runs/${t.id}?task=${t.id}`} className="flex items-center gap-1 text-[11px] font-semibold text-muted hover:text-accent">
+          <GitFork size={11} /> what happened, step by step
         </Link>
       </div>
       {forMe && (t.awaiting === me || t.input) && (

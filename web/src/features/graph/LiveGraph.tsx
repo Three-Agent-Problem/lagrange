@@ -40,7 +40,6 @@ export function LiveGraph() {
   const model = useView()
   const replay = useLive((s) => s.replay)
   const status = useLive((s) => s.status)
-  const openReplay = useLive((s) => s.openReplay)
   const { addresses, user } = useSession()
   const navigate = useNavigate()
   const wall = useNow(250)
@@ -92,7 +91,7 @@ export function LiveGraph() {
           presence: model.presence[handle],
           me: user?.handle,
           readOnly: !!replay,
-          onOpenTask: (id: string) => navigate(`/tasks/${id}`),
+          onOpenTask: (id: string) => navigate(`/runs/${id}?task=${id}`),
         },
       })),
     [handles, positions, selected, focus, byHandle, model, user, replay, navigate],
@@ -177,14 +176,6 @@ export function LiveGraph() {
           <Stat icon={<Sparkles size={12} />} label="in flight" value={inFlight} tone="accent" />
           <Stat icon={<MessageCircleQuestion size={12} />} label="waiting on someone" value={waitingPeople} tone="warn" />
           <Stat icon={<Bot size={12} />} label={`of ${agents} agents online`} value={online} tone="good" />
-          {!replay && (
-            <button
-              className="pointer-events-auto flex items-center gap-1.5 rounded-full bg-surface px-2.5 py-1 text-xs font-bold text-muted shadow-card ring-1 ring-line hover:text-ink"
-              onClick={() => void openReplay()}
-            >
-              <Rewind size={12} /> Replay
-            </button>
-          )}
         </div>
 
         {agents === 0 && !replay && (

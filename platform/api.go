@@ -43,6 +43,8 @@ func (p *Platform) api(mux *http.ServeMux) {
 	mux.Handle("POST /api/tasks/{id}/cancel", p.authed(p.handleCancel))
 	mux.Handle("POST /api/send", p.authed(p.handleSend))
 	mux.Handle("GET /api/graph", p.authed(p.handleGraph))
+	mux.Handle("GET /api/runs", p.authed(p.handleRuns))
+	mux.Handle("GET /api/runs/{id}", p.authed(p.handleRun))
 	mux.Handle("GET /api/activity", p.authed(p.handleActivity))
 	mux.Handle("GET /api/events", p.authed(func(w http.ResponseWriter, r *http.Request, _ *directory.User) {
 		p.Activity.Stream(w, r)
@@ -360,7 +362,7 @@ func (p *Platform) queryTasks(ctx context.Context, full bool, where string, args
 
 func fillTaskView(v *TaskView, task *a2a.Task) {
 	if len(task.History) > 0 {
-		v.Summary = relay.Text(task.History[0])
+		v.Summary = relay.Describe(task.History[0])
 	}
 	if msg := task.Status.Message; msg != nil {
 		if h, ok := msg.Metadata[relay.AwaitingKey].(string); ok {

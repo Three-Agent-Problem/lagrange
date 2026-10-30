@@ -96,7 +96,7 @@ export type JSONSchema = {
 export type Entry = {
   seq: number
   at: string
-  kind: 'task' | 'artifact' | 'message' | 'queued' | 'delivered' | 'presence' | 'address'
+  kind: 'task' | 'artifact' | 'message' | 'input' | 'queued' | 'delivered' | 'presence' | 'address'
   taskId?: string
   parentTaskId?: string
   contextId?: string
@@ -108,6 +108,49 @@ export type Entry = {
 }
 
 export type Link = { taskId: string; sender: string; recipient: string; parentTaskId?: string }
+
+/** One HTTP request and its response, as the platform carried it (activity.Exchange). */
+export type Exchange = {
+  id: number
+  at: string
+  /** in: a call to an address; out: the platform's call to the agent; push: a webhook. */
+  direction: 'in' | 'out' | 'push'
+  taskId?: string
+  parentTaskId?: string
+  contextId?: string
+  sender?: string
+  recipient?: string
+  method: string
+  url: string
+  status: number
+  durationMs: number
+  headers?: { request?: Record<string, string>; response?: Record<string, string> }
+  request: string
+  response: string
+  truncated?: boolean
+  error?: string
+}
+
+/** One major action: a task nobody delegated, with everything delegated from it. */
+export type Run = {
+  /** The root task's ID, or msg-<seq> for a plain message exchange. */
+  id: string
+  title: string
+  starter: string
+  recipient: string
+  /** The root task's state, or "message". */
+  state: string
+  waiting: string[]
+  participants: string[]
+  tasks: number
+  entries: number
+  startedAt: string
+  updatedAt: string
+}
+
+export type RunStatus = 'running' | 'waiting' | 'done' | 'failed'
+
+export type RunDetail = { run: Run; tasks: TaskView[]; entries: Entry[]; exchanges: Exchange[] }
 
 export type Graph = { seq: number; addresses: Address[]; tasks: TaskView[] }
 
@@ -154,6 +197,11 @@ export const api = {
     call<{ result: A2ATask | Message }>('POST', '/api/send', m),
   graph: () => call<Graph>('GET', '/api/graph'),
   activity: (since: number, limit = 2000) => call<{ entries: Entry[] }>('GET', `/api/activity?since=${since}&limit=${limit}`),
+  runs: (f: { status?: RunStatus; q?: string; participant?: string } = {}) => {
+    const q = new URLSearchParams(Object.entries(f).filter(([, v]) => v) as [string, string][])
+    return call<{ runs: Run[] }>('GET', `/api/runs${q.size ? `?${q}` : ''}`)
+  },
+  run: (id: string) => call<RunDetail>('GET', `/api/runs/${encodeURIComponent(id)}`),
 }
 
 /** The text parts of a message or artifact, joined. */

@@ -1,13 +1,14 @@
-import { Pause, Play, Radio, SkipBack } from 'lucide-react'
+import { ListTree, Pause, Play, Radio, SkipBack } from 'lucide-react'
 import { useEffect } from 'react'
+import { Link } from 'react-router'
 import { cn } from '@/lib/cn'
 import { replayDelay, useLive, type Speed } from '@/store/live'
 
-/** The scrubber: replays the activity log through the same reducer as the live view. */
+/** The scrubber: replays one run's activity through the same reducer as the live view. */
 export function ReplayBar() {
   const replay = useLive((s) => s.replay)!
   const { seek, step, setPlaying, setSpeed, closeReplay } = useLive.getState()
-  const { entries, index, playing, speed } = replay
+  const { entries, index, playing, speed, title, runId } = replay
 
   useEffect(() => {
     if (!playing) return
@@ -43,7 +44,10 @@ export function ReplayBar() {
         className="min-w-0 flex-1 accent-[var(--accent)]"
         aria-label="Replay position"
       />
-      <span className="w-40 truncate text-right font-mono text-[11px] text-muted">
+      <Link to={`/runs/${runId}`} className="flex max-w-56 min-w-0 items-center gap-1 truncate text-xs font-semibold text-muted hover:text-accent" title="Back to the run, step by step" onClick={closeReplay}>
+        <ListTree size={13} className="shrink-0" /> <span className="truncate">{title}</span>
+      </Link>
+      <span className="w-32 truncate text-right font-mono text-[11px] text-muted">
         {current ? new Date(current.at).toLocaleTimeString() : '--:--'} · {index}/{entries.length}
       </span>
       <button className="flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-bold text-good hover:bg-good-soft" onClick={closeReplay}>

@@ -60,7 +60,7 @@ export function Inspector({ handle, address, onClose }: { handle: string; addres
         {tasks.length === 0 && <li className="px-4 py-2 text-xs text-muted">No tasks yet.</li>}
         {tasks.map((t) => (
           <li key={t.id}>
-            <Link to={`/tasks/${t.id}`} className="block px-4 py-2 hover:bg-surface-2">
+            <Link to={`/runs/${t.id}?task=${t.id}`} className="block px-4 py-2 hover:bg-surface-2">
               <div className="flex items-center gap-2 text-xs">
                 <span className="truncate font-semibold">{t.sender === handle ? `→ @${t.recipient}` : `← ${t.sender === OUTSIDE ? 'outside' : '@' + t.sender}`}</span>
                 <StateBadge state={t.state} className="ml-auto" />

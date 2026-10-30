@@ -1,5 +1,5 @@
-// The live store: the server snapshot, kept current by the SSE stream, plus the replay
-// scrubber. Views read `view()`, which is the replayed model while a replay is open.
+// The live store: the server snapshot, kept current by the SSE stream, plus the replay of
+// one run on the graph. Views read `view()`, which is the replayed model while a replay is open.
 import { create } from 'zustand'
 import { api, type Entry } from '@/lib/api'
 import { emptyModel, fold, fromSnapshot, reduce, type Model } from '@/store/model'
@@ -7,6 +7,9 @@ import { emptyModel, fold, fromSnapshot, reduce, type Model } from '@/store/mode
 export type Speed = 1 | 4 | 16
 
 type Replay = {
+  /** The run being replayed. */
+  runId: string
+  title: string
   entries: Entry[]
   /** How many entries are folded in. */
   index: number
@@ -21,7 +24,7 @@ type LiveState = {
   replay?: Replay
   start: () => () => void
   apply: (e: Entry) => void
-  openReplay: () => Promise<void>
+  openReplay: (entries: Entry[], title: string, runId: string) => void
   closeReplay: () => void
   seek: (index: number) => void
   step: () => boolean
@@ -57,15 +60,9 @@ export const useLive = create<LiveState>((set, get) => ({
 
   apply: (e) => set((s) => ({ model: reduce(s.model, e) })),
 
-  openReplay: async () => {
-    const entries: Entry[] = []
-    for (let since = 0; ; ) {
-      const page = (await api.activity(since, 5000)).entries
-      entries.push(...page)
-      if (page.length < 5000) break
-      since = page[page.length - 1].seq
-    }
-    set({ replay: { entries, index: 0, model: emptyModel(), playing: entries.length > 0, speed: 4 } })
+  openReplay: (entries, title, runId) => {
+    const sorted = [...entries].sort((x, y) => x.seq - y.seq)
+    set({ replay: { runId, title, entries: sorted, index: 0, model: emptyModel(), playing: sorted.length > 0, speed: 4 } })
   },
 
   closeReplay: () => set({ replay: undefined }),

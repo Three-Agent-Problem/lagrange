@@ -25,6 +25,9 @@ const (
 	KindArtifact = "artifact"
 	// KindMessage is a plain message answer: an exchange that created no task.
 	KindMessage = "message"
+	// KindInput is a message that continues a task: an answer to its question, or more
+	// input from the sender.
+	KindInput = "input"
 	// KindQueued means a task is waiting in the recipient's mailbox (agent offline or busy).
 	KindQueued = "queued"
 	// KindDelivered means a queued task reached the agent.
@@ -84,6 +87,26 @@ func (l *Log) Since(ctx context.Context, seq int64, limit int) ([]*Entry, error)
 // Task returns every entry of a task, oldest first.
 func (l *Log) Task(ctx context.Context, taskID string) ([]*Entry, error) {
 	return l.query(ctx, `WHERE task_id = $1 ORDER BY seq`, taskID)
+}
+
+// Run returns the entries of the given tasks and of the calls made from them (messages
+// and child tasks name them as parent), oldest first.
+func (l *Log) Run(ctx context.Context, taskIDs []string) ([]*Entry, error) {
+	return l.query(ctx, `WHERE kind <> 'presence' AND (task_id = ANY($1) OR parent_task_id = ANY($1)) ORDER BY seq`, taskIDs)
+}
+
+// Get returns the entry with seq, or nil.
+func (l *Log) Get(ctx context.Context, seq int64) (*Entry, error) {
+	entries, err := l.query(ctx, `WHERE seq = $1`, seq)
+	if err != nil || len(entries) == 0 {
+		return nil, err
+	}
+	return entries[0], nil
+}
+
+// Messages returns the newest plain message exchanges that weren't made from a task.
+func (l *Log) Messages(ctx context.Context, limit int) ([]*Entry, error) {
+	return l.query(ctx, `WHERE kind = 'message' AND parent_task_id = '' ORDER BY seq DESC LIMIT $1`, limit)
 }
 
 // Last returns the latest seq, or 0.

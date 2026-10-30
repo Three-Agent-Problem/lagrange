@@ -219,8 +219,8 @@ func (p *Platform) routes() http.Handler {
 	mux.HandleFunc("GET /a/{handle}/.well-known/agent-card.json", p.handleCard)
 	// Clients given an address URL (https://host/a/ada) fetch it as the card URL.
 	mux.HandleFunc("GET /a/{handle}", p.handleCard)
-	mux.Handle("POST /a/{handle}/rpc", p.addressOnly(p.identify(tenantRPC(rpc))))
-	mux.Handle("/a/{handle}/", p.addressOnly(p.identify(rest)))
+	mux.Handle("POST /a/{handle}/rpc", p.addressOnly(p.identify(p.recordIn(tenantRPC(rpc)))))
+	mux.Handle("/a/{handle}/", p.addressOnly(p.identify(p.recordIn(rest))))
 	mux.HandleFunc("/t/{handle}/{path...}", p.handlePassthrough)
 	mux.Handle(tunnel.Path, p.Tunnels)
 	mux.HandleFunc("GET /registry/agents", p.handleRegistrySearch)
@@ -237,6 +237,21 @@ func (p *Platform) addressOnly(next http.Handler) http.Handler {
 			return
 		}
 		next.ServeHTTP(w, r)
+	})
+}
+
+// recordIn records every A2A call to an address: who called, the request and the
+// response (a whole stream, for streaming calls).
+func (p *Platform) recordIn(next http.Handler) http.Handler {
+	return p.Activity.Handler(next, func(r *http.Request) activity.Exchange {
+		x := activity.Exchange{Direction: activity.DirIn, Recipient: r.PathValue("handle")}
+		if id, _ := r.Context().Value(identityKey{}).(*identity); id != nil {
+			x.Sender = id.handle
+		}
+		if parent := r.Header.Get(relay.HeaderTask); parent != "" && p.Links.ValidParent(r.Context(), a2a.TaskID(parent), x.Sender) {
+			x.ParentTaskID = parent
+		}
+		return x
 	})
 }
 
@@ -335,7 +350,8 @@ func (p *Platform) handlePassthrough(w http.ResponseWriter, r *http.Request) {
 	out.URL.RawPath = ""
 	out.RequestURI = ""
 	out.Host = "agent"
-	resp, err := s.Transport().RoundTrip(out)
+	// Pushes come from the platform's own push sender, on behalf of the task they report.
+	resp, err := p.Activity.Transport(s.Transport(), activity.Exchange{Direction: activity.DirPush, Recipient: handle}).RoundTrip(out)
 	if err != nil {
 		http.Error(w, "the agent did not answer: "+err.Error(), http.StatusBadGateway)
 		return

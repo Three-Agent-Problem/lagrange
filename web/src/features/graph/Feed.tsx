@@ -53,7 +53,12 @@ function Row({ e, kind }: { e: Entry; kind: (h: string) => 'agent' | 'human' | u
         <Package size={12} /> artifact {e.summary && <b className="text-ink">{e.summary}</b>}
       </span>
     ) : e.kind === 'message' ? (
-      <span className="truncate text-muted">{e.data?.reply ? `replied: ${String(e.data.reply)}` : 'replied'}</span>
+      <span className="truncate text-muted">
+        {e.summary && <>asked: {e.summary} · </>}
+        {e.data?.reply ? `replied: ${String(e.data.reply)}` : 'replied'}
+      </span>
+    ) : e.kind === 'input' ? (
+      <span className="truncate text-muted">answered: {e.summary}</span>
     ) : (
       <span className="flex min-w-0 items-center gap-1.5">
         {e.state && <StateBadge state={e.state} />}
@@ -80,10 +85,19 @@ function Row({ e, kind }: { e: Entry; kind: (h: string) => 'agent' | 'human' | u
       </div>
     </div>
   )
-  return <li className="border-b border-line/60">{e.taskId ? <Link to={`/tasks/${e.taskId}`}>{inner}</Link> : inner}</li>
+  const run = runLink(e)
+  return <li className="border-b border-line/60">{run ? <Link to={run}>{inner}</Link> : inner}</li>
 }
 
 function workers(n: number): string {
   if (n <= 0) return 'went offline'
   return n === 1 ? '1 worker online' : `${n} workers online`
+}
+
+/** The run an entry belongs to, at its task: a plain message is a run of its own unless it
+ * was sent from a task. */
+function runLink(e: Entry): string | undefined {
+  if (e.taskId) return `/runs/${e.taskId}?task=${e.taskId}`
+  if (e.kind === 'message') return e.parentTaskId ? `/runs/${e.parentTaskId}` : `/runs/msg-${e.seq}`
+  return undefined
 }

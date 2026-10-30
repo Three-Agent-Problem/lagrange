@@ -12,6 +12,7 @@ import (
 	"net/http/cookiejar"
 	"net/http/httptest"
 	"net/url"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -23,6 +24,7 @@ import (
 	"github.com/a2aproject/a2a-go/v2/a2aclient/agentcard"
 	"github.com/a2aproject/a2a-go/v2/a2asrv"
 
+	"github.com/three-agent-problem/lagrange/activity"
 	"github.com/three-agent-problem/lagrange/directory"
 	"github.com/three-agent-problem/lagrange/pg"
 	"github.com/three-agent-problem/lagrange/pg/pgtest"
@@ -484,6 +486,12 @@ func TestHumanAnswers(t *testing.T) {
 	if got := done.Status.Message.Metadata[relay.AnsweredByKey]; got != "ada" {
 		t.Fatalf("answered by = %v", got)
 	}
+	// The answer is in the activity log, as input from Ada.
+	entries, _ := e.p.Activity.Task(ctx, string(task.ID))
+	if i := slices.IndexFunc(entries, func(en *activity.Entry) bool { return en.Kind == activity.KindInput }); i < 0 ||
+		entries[i].Data["from"] != "ada" || entries[i].Summary != "Approved, ship it." {
+		t.Fatalf("no input entry from ada in %+v", entries)
+	}
 
 	// A rejection ends the task as rejected.
 	task = asTask(t)(c.SendMessage(ctx, text("Approve 90,000 EUR?")))
@@ -547,6 +555,12 @@ func TestPersonDelegates(t *testing.T) {
 	ada.do(http.MethodGet, "/api/inbox", nil, http.StatusOK, &inbox)
 	if len(inbox.Tasks) != 1 || inbox.Tasks[0].ID != id {
 		t.Fatalf("inbox = %+v", inbox)
+	}
+	// The agent's question waits on Ada, who sent the task.
+	var waiting runList
+	ada.do(http.MethodGet, "/api/runs?status=waiting", nil, http.StatusOK, &waiting)
+	if len(waiting.Runs) != 1 || waiting.Runs[0].ID != id || strings.Join(waiting.Runs[0].Waiting, ",") != "ada" {
+		t.Fatalf("waiting runs = %+v", waiting.Runs)
 	}
 
 	ada.do(http.MethodPost, "/api/tasks/"+id+"/answer", map[string]string{"text": "L"}, http.StatusAccepted, nil)
@@ -868,5 +882,170 @@ func TestAgentNotAnswering(t *testing.T) {
 	}
 	if got := relay.Text(task.Status.Message); !strings.Contains(got, "nothing answers at "+dead.URL) {
 		t.Fatalf("status = %q, want the unreachable target in it", got)
+	}
+}
+
+type runList struct {
+	Runs []struct {
+		ID           string   `json:"id"`
+		State        string   `json:"state"`
+		Participants []string `json:"participants"`
+		Waiting      []string `json:"waiting"`
+		Tasks        int      `json:"tasks"`
+	} `json:"runs"`
+}
+
+type runDetail struct {
+	Run struct {
+		ID string `json:"id"`
+	} `json:"run"`
+	Tasks     []struct{ ID string } `json:"tasks"`
+	Entries   []*activity.Entry     `json:"entries"`
+	Exchanges []*activity.Exchange  `json:"exchanges"`
+}
+
+// A person's request, the agent's delegation and the delegate's answer form one run,
+// with every HTTP exchange behind it, and no token in any of them.
+func TestRunsAPI(t *testing.T) {
+	e := newEnv(t, "")
+	echoToken := e.agent(t, "echo")
+	buyerToken := e.agent(t, "buyer")
+	e.connect(t, "echo", echoToken, agentServer("echo", echo("echo", 0, nil, nil, nil)), 2)
+	e.connect(t, "buyer", buyerToken, agentServer("buyer", delegator(e, buyerToken)), 2)
+	ada := e.login(t, adminEmail, adminPassword)
+
+	var sent struct {
+		Result struct{ ID string } `json:"result"`
+	}
+	ada.do(http.MethodPost, "/api/send", map[string]string{"to": "@buyer", "text": "quote 200 hoodies"}, http.StatusOK, &sent)
+	root := sent.Result.ID
+	var runs runList
+	waitFor(t, "the run to complete", func() bool {
+		ada.do(http.MethodGet, "/api/runs?status=done", nil, http.StatusOK, &runs)
+		return len(runs.Runs) == 1 && runs.Runs[0].Tasks == 2
+	})
+	if r := runs.Runs[0]; r.ID != root || r.State != string(a2a.TaskStateCompleted) || strings.Join(r.Participants, ",") != "ada,buyer,echo" {
+		t.Fatalf("run = %+v", r)
+	}
+	ada.do(http.MethodGet, "/api/runs?status=failed", nil, http.StatusOK, &runs)
+	if len(runs.Runs) != 0 {
+		t.Fatalf("failed runs = %+v", runs.Runs)
+	}
+
+	children, _ := e.p.Links.Children(t.Context(), a2a.TaskID(root))
+	if len(children) != 1 {
+		t.Fatalf("children = %+v", children)
+	}
+	child := string(children[0].TaskID)
+	var d runDetail
+	// Exchanges are stored when their response ends, just after the task completes.
+	waitFor(t, "the exchanges", func() bool {
+		ada.do(http.MethodGet, "/api/runs/"+child, nil, http.StatusOK, &d)
+		return len(d.Exchanges) >= 3
+	})
+	if d.Run.ID != root || len(d.Tasks) != 2 {
+		t.Fatalf("run %s, %d tasks", d.Run.ID, len(d.Tasks))
+	}
+	var in, outEcho, outBuyer *activity.Exchange
+	for _, x := range d.Exchanges {
+		switch {
+		case x.Direction == activity.DirIn && x.Recipient == "echo":
+			in = x
+		case x.Direction == activity.DirOut && x.Recipient == "echo" && x.Method == http.MethodPost:
+			outEcho = x
+		case x.Direction == activity.DirOut && x.Recipient == "buyer" && x.Method == http.MethodPost:
+			outBuyer = x
+		}
+		raw, _ := json.Marshal(x)
+		if strings.Contains(string(raw), buyerToken) || strings.Contains(string(raw), echoToken) || strings.Contains(string(raw), "Bearer") {
+			t.Fatalf("a token was stored: %s", raw)
+		}
+	}
+	if in == nil || in.Sender != "buyer" || in.TaskID != child || !strings.Contains(in.Request, "quote 200 hoodies") || in.Status != http.StatusOK {
+		t.Fatalf("inbound exchange = %+v", in)
+	}
+	if outEcho == nil || outEcho.TaskID != child || !strings.Contains(outEcho.Response, "echo: quote 200 hoodies") {
+		t.Fatalf("exchange with echo = %+v", outEcho)
+	}
+	if outBuyer == nil || outBuyer.TaskID != root || outBuyer.Sender != "ada" {
+		t.Fatalf("exchange with buyer = %+v", outBuyer)
+	}
+}
+
+// A plain message exchange is a run of its own, with its exchanges.
+func TestMessageRun(t *testing.T) {
+	e := newEnv(t, "")
+	tok := e.agent(t, "pinger")
+	e.connect(t, "pinger", tok, agentServer("pinger", replier()), 1)
+	if _, err := e.client(t, "pinger", "", "").SendMessage(t.Context(), text("ping")); err != nil {
+		t.Fatal(err)
+	}
+	ada := e.login(t, adminEmail, adminPassword)
+	var runs runList
+	ada.do(http.MethodGet, "/api/runs", nil, http.StatusOK, &runs)
+	if len(runs.Runs) != 1 || !strings.HasPrefix(runs.Runs[0].ID, "msg-") || runs.Runs[0].State != "message" {
+		t.Fatalf("runs = %+v", runs.Runs)
+	}
+	var d runDetail
+	waitFor(t, "the exchanges", func() bool {
+		ada.do(http.MethodGet, "/api/runs/"+runs.Runs[0].ID, nil, http.StatusOK, &d)
+		return len(d.Exchanges) >= 2
+	})
+	dirs := map[string]bool{}
+	for _, x := range d.Exchanges {
+		dirs[x.Direction] = true
+	}
+	if !dirs[activity.DirIn] || !dirs[activity.DirOut] || len(d.Entries) != 1 {
+		t.Fatalf("exchanges %v, entries %d", dirs, len(d.Entries))
+	}
+}
+
+// A push through an agent's exposed HTTP is recorded under the task it reports.
+func TestPushRecorded(t *testing.T) {
+	e := newEnv(t, "")
+	tok := e.agent(t, "hooky")
+	got := make(chan string, 1)
+	hook := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/webhook" {
+			http.NotFound(w, r) // the platform fetches the agent card on connect
+			return
+		}
+		raw, _ := io.ReadAll(r.Body)
+		got <- r.URL.Path + " " + r.Header.Get("Authorization") + " " + string(raw)
+		w.WriteHeader(http.StatusNoContent)
+	})
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	go func() {
+		_ = tunnel.Run(ctx, tunnel.ClientConfig{Server: e.url, Token: tok, Capacity: 1, Handler: hook, Expose: true, Logger: quiet})
+	}()
+	waitFor(t, "the tunnel to register", func() bool { return e.p.Mailbox.Stats("hooky").Sessions == 1 })
+
+	body := `{"statusUpdate":{"taskId":"task-1","contextId":"ctx-1","status":{"state":"TASK_STATE_WORKING"}}}`
+	req, _ := http.NewRequest(http.MethodPost, e.url+"/t/hooky/webhook", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer push-secret")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("status = %d", resp.StatusCode)
+	}
+	if delivered := <-got; !strings.HasPrefix(delivered, "/webhook Bearer push-secret") {
+		t.Fatalf("delivered = %q", delivered)
+	}
+	var xs []*activity.Exchange
+	waitFor(t, "the push exchange", func() bool {
+		xs, _ = e.p.Activity.Exchanges(t.Context(), []string{"task-1"}, nil)
+		return len(xs) == 1
+	})
+	x := xs[0]
+	if x.Direction != activity.DirPush || x.Recipient != "hooky" || x.ContextID != "ctx-1" || x.Request != body || x.Status != http.StatusNoContent {
+		t.Fatalf("exchange = %+v", x)
+	}
+	if raw, _ := json.Marshal(x); strings.Contains(string(raw), "push-secret") {
+		t.Fatalf("the push secret was stored: %s", raw)
 	}
 }

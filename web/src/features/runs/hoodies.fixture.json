@@ -1,0 +1,668 @@
+{
+ "tasks": [
+  {
+   "id": "01a18ee8-2d65-7478-950e-4156d000acee",
+   "contextId": "01a18ee8-2d67-7979-b03b-e6eae6c5375f",
+   "state": "TASK_STATE_COMPLETED",
+   "sender": "ada",
+   "recipient": "acme-buyer",
+   "summary": "Order 200 hoodies, budget 6000 EUR, deliver by 2026-11-20",
+   "createdAt": "2026-10-31T01:22:23.08379+03:00",
+   "updatedAt": "2026-10-31T01:22:29.241645+03:00"
+  },
+  {
+   "id": "01a18ee8-35c0-7497-b0d4-d92048861992",
+   "contextId": "01a18ee8-35c1-7cec-b972-0870a49523b4",
+   "state": "TASK_STATE_COMPLETED",
+   "sender": "acme-buyer",
+   "recipient": "northwind",
+   "parentTaskId": "01a18ee8-2d65-7478-950e-4156d000acee",
+   "summary": "{\"buyer\":\"Acme\",\"deliverBy\":\"2026-11-20\",\"item\":\"hoodie\",\"quantity\":200,\"quoteId\":\"Q-38972e33\",\"request\":\"order\"}",
+   "createdAt": "2026-10-31T01:22:25.221203+03:00",
+   "updatedAt": "2026-10-31T01:22:29.233044+03:00"
+  }
+ ],
+ "entries": [
+  {
+   "seq": 180,
+   "at": "2026-10-31T01:22:23.082501+03:00",
+   "kind": "task",
+   "taskId": "01a18ee8-2d65-7478-950e-4156d000acee",
+   "contextId": "01a18ee8-2d67-7979-b03b-e6eae6c5375f",
+   "sender": "ada",
+   "recipient": "acme-buyer",
+   "state": "TASK_STATE_SUBMITTED",
+   "summary": "Order 200 hoodies, budget 6000 EUR, deliver by 2026-11-20"
+  },
+  {
+   "seq": 181,
+   "at": "2026-10-31T01:22:23.083979+03:00",
+   "kind": "task",
+   "taskId": "01a18ee8-2d65-7478-950e-4156d000acee",
+   "contextId": "01a18ee8-2d67-7979-b03b-e6eae6c5375f",
+   "sender": "ada",
+   "recipient": "acme-buyer",
+   "state": "TASK_STATE_WORKING",
+   "summary": "Looking for suppliers of 200 hoodies."
+  },
+  {
+   "seq": 184,
+   "at": "2026-10-31T01:22:23.090308+03:00",
+   "kind": "message",
+   "parentTaskId": "01a18ee8-2d65-7478-950e-4156d000acee",
+   "contextId": "01a18ee8-2d70-70a7-96a7-1ec3e5e8b8ff",
+   "sender": "acme-buyer",
+   "recipient": "northwind",
+   "summary": "{\"buyer\":\"Acme\",\"deliverBy\":\"2026-11-20\",\"item\":\"hoodie\",\"quantity\":200,\"request\":\"quote\"}",
+   "data": {
+    "callId": "01a18ee8-2d6d-7534-9240-4178597cb7a0",
+    "reply": "{\"agentUrl\":\"http://localhost:8090/a/northwind\",\"currency\":\"EUR\",\"item\":\"hoodie\",\"leadDays\":7,\"quantity\":200,\"quoteId\":\"Q-38972e33\",\"shipDate\":\"2026-11-07\",\"su\u2026",
+    "replyContent": "{\"agentUrl\":\"http://localhost:8090/a/northwind\",\"currency\":\"EUR\",\"item\":\"hoodie\",\"leadDays\":7,\"quantity\":200,\"quoteId\":\"Q-38972e33\",\"shipDate\":\"2026-11-07\",\"supplier\":\"Northwind Merch\",\"total\":5416,\"unitPrice\":27.08,\"validUntil\":\"2026-11-07\"}",
+    "request": "{\"buyer\":\"Acme\",\"deliverBy\":\"2026-11-20\",\"item\":\"hoodie\",\"quantity\":200,\"request\":\"quote\"}"
+   }
+  },
+  {
+   "seq": 186,
+   "at": "2026-10-31T01:22:23.092014+03:00",
+   "kind": "message",
+   "parentTaskId": "01a18ee8-2d65-7478-950e-4156d000acee",
+   "contextId": "01a18ee8-2d70-7c6b-a593-cc29e7b9ba38",
+   "sender": "acme-buyer",
+   "recipient": "contoso",
+   "summary": "{\"buyer\":\"Acme\",\"deliverBy\":\"2026-11-20\",\"item\":\"hoodie\",\"quantity\":200,\"request\":\"quote\"}",
+   "data": {
+    "callId": "01a18ee8-2d6d-7bb4-a23d-542298a0f497",
+    "reply": "{\"agentUrl\":\"http://localhost:8090/a/contoso\",\"currency\":\"EUR\",\"item\":\"hoodie\",\"leadDays\":30,\"quantity\":200,\"quoteId\":\"Q-13a06ec0\",\"shipDate\":\"2026-11-30\",\"sup\u2026",
+    "replyContent": "{\"agentUrl\":\"http://localhost:8090/a/contoso\",\"currency\":\"EUR\",\"item\":\"hoodie\",\"leadDays\":30,\"quantity\":200,\"quoteId\":\"Q-13a06ec0\",\"shipDate\":\"2026-11-30\",\"supplier\":\"Contoso Prints\",\"total\":4560,\"unitPrice\":22.8,\"validUntil\":\"2026-11-07\"}",
+    "request": "{\"buyer\":\"Acme\",\"deliverBy\":\"2026-11-20\",\"item\":\"hoodie\",\"quantity\":200,\"request\":\"quote\"}"
+   }
+  },
+  {
+   "seq": 188,
+   "at": "2026-10-31T01:22:23.189618+03:00",
+   "kind": "artifact",
+   "taskId": "01a18ee8-2d65-7478-950e-4156d000acee",
+   "contextId": "01a18ee8-2d67-7979-b03b-e6eae6c5375f",
+   "sender": "ada",
+   "recipient": "acme-buyer",
+   "summary": "quote-comparison",
+   "data": {
+    "append": false,
+    "artifactId": "01a18ee8-2dd4-7bea-86eb-59ac648de1d4",
+    "content": "Quotes for 200 hoodies by 2026-11-20: Contoso Prints 4560.00 EUR (22.80 each, ships 2026-11-30); Northwind Merch 5416.00 EUR (27.08 each, ships 2026-11-07). Northwind Merch is the cheapest of 1 quote(s) that ship in time. Excluded: Contoso Prints ships 2026-11-30, after 2026-11-20.\n{\"chosen\":{\"agentUrl\":\"http://localhost:8090/a/northwind\",\"currency\":\"EUR\",\"item\":\"hoodie\",\"leadDays\":7,\"quantity\":200,\"quoteId\":\"Q-38972e33\",\"shipDate\":\"2026-11-07\",\"supplier\":\"Northwind Merch\",\"total\":5416,\"unitPrice\":27.08,\"validUntil\":\"2026-11-07\"},\"needsApproval\":true,\"purchase\":{\"addToCalendar\":false,\"budget\":6000,\"currency\":\"EUR\",\"deliverBy\":\"2026-11-20\",\"item\":\"hoodie\",\"quantity\":200,\"text\":\"Order 200 hoodies, budget 6000 EUR, deliver by 2026-11-20\"},\"quotes\":[{\"agentUrl\":\"http://localhost:8090/a/contoso\",\"currency\":\"EUR\",\"item\":\"hoodie\",\"leadDays\":30,\"quantity\":200,\"quoteId\":\"Q-13a06ec0\",\"shipDate\":\"2026-11-30\",\"supplier\":\"Contoso Prints\",\"total\":4560,\"unitPrice\":22.8,\"validUntil\":\"2026-11-07\"},{\"agentUrl\":\"http://localhost:8090/a/northwind\",\"currency\":\"EUR\",\"item\":\"hoodie\",\"leadDays\":7,\"quantity\":200,\"quoteId\":\"Q-38972e33\",\"shipDate\":\"2026-11-07\",\"supplier\":\"Northwind Merch\",\"total\":5416,\"unitPrice\":27.08,\"validUntil\":\"2026-11-07\"}],\"reason\":\"Northwind Merch is the cheapest of 1 quote(s) that ship in time. Excluded: Contoso Prints ships 2026-11-30, after 2026-11-20.\"}",
+    "lastChunk": false
+   }
+  },
+  {
+   "seq": 189,
+   "at": "2026-10-31T01:22:23.190796+03:00",
+   "kind": "task",
+   "taskId": "01a18ee8-2d65-7478-950e-4156d000acee",
+   "contextId": "01a18ee8-2d67-7979-b03b-e6eae6c5375f",
+   "sender": "ada",
+   "recipient": "acme-buyer",
+   "state": "TASK_STATE_INPUT_REQUIRED",
+   "summary": "Approve 200 hoodies from Northwind Merch for 5416.00 EUR (ships 2026-11-07)? The total is above the 5000 EUR approval limit. Northwind Merch is the cheapest of 1 quote(s) that ship in time. Excluded: Contoso Prints ships 2026-11-30, after 2026-11-20."
+  },
+  {
+   "seq": 191,
+   "at": "2026-10-31T01:22:25.211494+03:00",
+   "kind": "input",
+   "taskId": "01a18ee8-2d65-7478-950e-4156d000acee",
+   "contextId": "01a18ee8-2d67-7979-b03b-e6eae6c5375f",
+   "sender": "ada",
+   "recipient": "acme-buyer",
+   "summary": "{\"approved\":true,\"note\":\"Go ahead\"}",
+   "data": {
+    "content": "{\"approved\":true,\"note\":\"Go ahead\"}",
+    "from": "ada"
+   }
+  },
+  {
+   "seq": 193,
+   "at": "2026-10-31T01:22:25.215275+03:00",
+   "kind": "task",
+   "taskId": "01a18ee8-2d65-7478-950e-4156d000acee",
+   "contextId": "01a18ee8-2d67-7979-b03b-e6eae6c5375f",
+   "sender": "ada",
+   "recipient": "acme-buyer",
+   "state": "TASK_STATE_WORKING",
+   "summary": "Approved by ada (Go ahead)."
+  },
+  {
+   "seq": 195,
+   "at": "2026-10-31T01:22:25.220639+03:00",
+   "kind": "task",
+   "taskId": "01a18ee8-35c0-7497-b0d4-d92048861992",
+   "parentTaskId": "01a18ee8-2d65-7478-950e-4156d000acee",
+   "contextId": "01a18ee8-35c1-7cec-b972-0870a49523b4",
+   "sender": "acme-buyer",
+   "recipient": "northwind",
+   "state": "TASK_STATE_SUBMITTED",
+   "summary": "{\"buyer\":\"Acme\",\"deliverBy\":\"2026-11-20\",\"item\":\"hoodie\",\"quantity\":200,\"quoteId\":\"Q-38972e33\",\"request\":\"order\"}"
+  },
+  {
+   "seq": 196,
+   "at": "2026-10-31T01:22:25.221598+03:00",
+   "kind": "task",
+   "taskId": "01a18ee8-35c0-7497-b0d4-d92048861992",
+   "parentTaskId": "01a18ee8-2d65-7478-950e-4156d000acee",
+   "contextId": "01a18ee8-35c1-7cec-b972-0870a49523b4",
+   "sender": "acme-buyer",
+   "recipient": "northwind",
+   "state": "TASK_STATE_WORKING",
+   "summary": "Order received: 200 \u00d7 hoodie against quote Q-38972e33."
+  },
+  {
+   "seq": 197,
+   "at": "2026-10-31T01:22:25.222149+03:00",
+   "kind": "artifact",
+   "taskId": "01a18ee8-35c0-7497-b0d4-d92048861992",
+   "parentTaskId": "01a18ee8-2d65-7478-950e-4156d000acee",
+   "contextId": "01a18ee8-35c1-7cec-b972-0870a49523b4",
+   "sender": "acme-buyer",
+   "recipient": "northwind",
+   "summary": "fulfilment",
+   "data": {
+    "append": false,
+    "artifactId": "01a18ee8-35c3-7812-b828-7a3b01f427e5",
+    "content": "Production scheduled.",
+    "lastChunk": false
+   }
+  },
+  {
+   "seq": 198,
+   "at": "2026-10-31T01:22:25.319657+03:00",
+   "kind": "task",
+   "taskId": "01a18ee8-2d65-7478-950e-4156d000acee",
+   "contextId": "01a18ee8-2d67-7979-b03b-e6eae6c5375f",
+   "sender": "ada",
+   "recipient": "acme-buyer",
+   "state": "TASK_STATE_WORKING",
+   "summary": "Order placed with Northwind Merch (task \u202648861992). Waiting for fulfilment updates."
+  },
+  {
+   "seq": 199,
+   "at": "2026-10-31T01:22:27.221029+03:00",
+   "kind": "artifact",
+   "taskId": "01a18ee8-35c0-7497-b0d4-d92048861992",
+   "parentTaskId": "01a18ee8-2d65-7478-950e-4156d000acee",
+   "contextId": "01a18ee8-35c1-7cec-b972-0870a49523b4",
+   "sender": "acme-buyer",
+   "recipient": "northwind",
+   "data": {
+    "append": true,
+    "artifactId": "01a18ee8-35c3-7812-b828-7a3b01f427e5",
+    "content": "Printed and quality-checked.",
+    "lastChunk": false
+   }
+  },
+  {
+   "seq": 200,
+   "at": "2026-10-31T01:22:29.22195+03:00",
+   "kind": "artifact",
+   "taskId": "01a18ee8-35c0-7497-b0d4-d92048861992",
+   "parentTaskId": "01a18ee8-2d65-7478-950e-4156d000acee",
+   "contextId": "01a18ee8-35c1-7cec-b972-0870a49523b4",
+   "sender": "acme-buyer",
+   "recipient": "northwind",
+   "data": {
+    "append": true,
+    "artifactId": "01a18ee8-35c3-7812-b828-7a3b01f427e5",
+    "content": "Packed and handed to the carrier.",
+    "lastChunk": true
+   }
+  },
+  {
+   "seq": 201,
+   "at": "2026-10-31T01:22:29.223368+03:00",
+   "kind": "artifact",
+   "taskId": "01a18ee8-35c0-7497-b0d4-d92048861992",
+   "parentTaskId": "01a18ee8-2d65-7478-950e-4156d000acee",
+   "contextId": "01a18ee8-35c1-7cec-b972-0870a49523b4",
+   "sender": "acme-buyer",
+   "recipient": "northwind",
+   "summary": "order-confirmation",
+   "data": {
+    "append": false,
+    "artifactId": "01a18ee8-4564-7cec-8cca-1e1b80ae05f4",
+    "content": "{\"currency\":\"EUR\",\"orderId\":\"O-065c3d7b\",\"quoteId\":\"Q-38972e33\",\"shipDate\":\"2026-11-07\",\"total\":5416,\"tracking\":\"TRK780B4253\"}",
+    "lastChunk": false
+   }
+  },
+  {
+   "seq": 202,
+   "at": "2026-10-31T01:22:29.226438+03:00",
+   "kind": "task",
+   "taskId": "01a18ee8-35c0-7497-b0d4-d92048861992",
+   "parentTaskId": "01a18ee8-2d65-7478-950e-4156d000acee",
+   "contextId": "01a18ee8-35c1-7cec-b972-0870a49523b4",
+   "sender": "acme-buyer",
+   "recipient": "northwind",
+   "state": "TASK_STATE_COMPLETED",
+   "summary": "Shipped. Order O-065c3d7b, tracking TRK780B4253, arrives 2026-11-07."
+  },
+  {
+   "seq": 204,
+   "at": "2026-10-31T01:22:29.239111+03:00",
+   "kind": "artifact",
+   "taskId": "01a18ee8-2d65-7478-950e-4156d000acee",
+   "contextId": "01a18ee8-2d67-7979-b03b-e6eae6c5375f",
+   "sender": "ada",
+   "recipient": "acme-buyer",
+   "summary": "purchase-order",
+   "data": {
+    "append": false,
+    "artifactId": "01a18ee8-4576-72f5-bf6f-fc0fa168aa98",
+    "content": "PO-6BBDFB: 200 hoodies from Northwind Merch for 5416.00 EUR, approved by ada (Go ahead). Shipped as O-065c3d7b, tracking TRK780B4253, arrives 2026-11-07.\n{\"approvedBy\":\"ada (Go ahead)\",\"confirmation\":{\"currency\":\"EUR\",\"orderId\":\"O-065c3d7b\",\"quoteId\":\"Q-38972e33\",\"shipDate\":\"2026-11-07\",\"total\":5416,\"tracking\":\"TRK780B4253\"},\"currency\":\"EUR\",\"item\":\"hoodie\",\"poNumber\":\"PO-6BBDFB\",\"quantity\":200,\"supplier\":\"Northwind Merch\",\"supplierTaskId\":\"01a18ee8-35c0-7497-b0d4-d92048861992\",\"total\":5416}",
+    "lastChunk": false
+   }
+  },
+  {
+   "seq": 205,
+   "at": "2026-10-31T01:22:29.240741+03:00",
+   "kind": "task",
+   "taskId": "01a18ee8-2d65-7478-950e-4156d000acee",
+   "contextId": "01a18ee8-2d67-7979-b03b-e6eae6c5375f",
+   "sender": "ada",
+   "recipient": "acme-buyer",
+   "state": "TASK_STATE_COMPLETED",
+   "summary": "PO-6BBDFB: 200 hoodies from Northwind Merch for 5416.00 EUR, approved by ada (Go ahead). Shipped as O-065c3d7b, tracking TRK780B4253, arrives 2026-11-07."
+  }
+ ],
+ "exchanges": [
+  {
+   "id": 21,
+   "at": "2026-10-31T01:22:23.080494+03:00",
+   "direction": "out",
+   "taskId": "01a18ee8-2d65-7478-950e-4156d000acee",
+   "contextId": "01a18ee8-2d67-7979-b03b-e6eae6c5375f",
+   "sender": "ada",
+   "recipient": "acme-buyer",
+   "method": "POST",
+   "url": "/a/acme-buyer/invoke",
+   "status": 200,
+   "durationMs": 109,
+   "headers": {
+    "request": {
+     "A2A-Version": "1.0",
+     "Content-Type": "application/json",
+     "Lagrange-Sender": "ada",
+     "Lagrange-Task": "01a18ee8-2d65-7478-950e-4156d000acee"
+    },
+    "response": {
+     "Content-Type": "text/event-stream"
+    }
+   },
+   "request": "{\"jsonrpc\":\"2.0\",\"method\":\"SendStreamingMessage\",\"params\":{\"message\":{\"messageId\":\"01a18ee8-2d65-73bd-bb24-36a9cff76a27\",\"parts\":[{\"text\":\"Order 200 hoodies, budget 6000 EUR, deliver by 2026-11-20\"}],\"role\":\"ROLE_USER\"}},\"id\":\"7c5a7f9f-8493-4726-b06f-cd3f4701aa54\"}",
+   "response": "id: bf6ec4ed-16de-488b-9cd3-5d2219ad6c0a\ndata: {\"jsonrpc\":\"2.0\",\"id\":\"7c5a7f9f-8493-4726-b06f-cd3f4701aa54\",\"result\":{\"task\":{\"id\":\"01a18ee8-2d68-7e63-bd8e-6e61b314df16\",\"contextId\":\"01a18ee8-2d68-7eb9-bff0-6af25129f469\",\"history\":[{\"messageId\":\"01a18ee8-2d65-73bd-bb24-36a9cff76a27\",\"parts\":[{\"text\""
+  },
+  {
+   "id": 20,
+   "at": "2026-10-31T01:22:23.085233+03:00",
+   "direction": "in",
+   "parentTaskId": "01a18ee8-2d65-7478-950e-4156d000acee",
+   "contextId": "01a18ee8-2d70-70a7-96a7-1ec3e5e8b8ff",
+   "sender": "acme-buyer",
+   "recipient": "northwind",
+   "method": "POST",
+   "url": "/a/northwind/rpc",
+   "status": 200,
+   "durationMs": 102,
+   "headers": {
+    "request": {
+     "A2A-Version": "1.0",
+     "Content-Type": "application/json",
+     "Lagrange-Task": "01a18ee8-2d65-7478-950e-4156d000acee",
+     "User-Agent": "Go-http-client/1.1"
+    },
+    "response": {
+     "Content-Type": "application/json"
+    }
+   },
+   "request": "{\"jsonrpc\":\"2.0\",\"method\":\"SendMessage\",\"params\":{\"message\":{\"messageId\":\"01a18ee8-2d6a-7c9e-8700-7d05ca6fc4f0\",\"parts\":[{\"data\":{\"buyer\":\"Acme\",\"deliverBy\":\"2026-11-20\",\"item\":\"hoodie\",\"quantity\":200,\"request\":\"quote\"}}],\"role\":\"ROLE_USER\"}},\"id\":\"e68a49e3-e650-4bc2-a1fc-0d146cf36e04\"}",
+   "response": "{\"jsonrpc\":\"2.0\",\"id\":\"e68a49e3-e650-4bc2-a1fc-0d146cf36e04\",\"result\":{\"message\":{\"messageId\":\"01a18ee8-2d71-7616-9ab2-89cc4d08135a\",\"contextId\":\"01a18ee8-2d70-70a7-96a7-1ec3e5e8b8ff\",\"parts\":[{\"data\":{\"agentUrl\":\"http://localhost:8090/a/northwind\",\"currency\":\"EUR\",\"item\":\"hoodie\",\"leadDays\":7,\"quan"
+  },
+  {
+   "id": 19,
+   "at": "2026-10-31T01:22:23.085617+03:00",
+   "direction": "in",
+   "parentTaskId": "01a18ee8-2d65-7478-950e-4156d000acee",
+   "contextId": "01a18ee8-2d70-7c6b-a593-cc29e7b9ba38",
+   "sender": "acme-buyer",
+   "recipient": "contoso",
+   "method": "POST",
+   "url": "/a/contoso/rpc",
+   "status": 200,
+   "durationMs": 101,
+   "headers": {
+    "request": {
+     "A2A-Version": "1.0",
+     "Content-Type": "application/json",
+     "Lagrange-Task": "01a18ee8-2d65-7478-950e-4156d000acee",
+     "User-Agent": "Go-http-client/1.1"
+    },
+    "response": {
+     "Content-Type": "application/json"
+    }
+   },
+   "request": "{\"jsonrpc\":\"2.0\",\"method\":\"SendMessage\",\"params\":{\"message\":{\"messageId\":\"01a18ee8-2d6a-7d3a-a2c2-0845f3fe5ea4\",\"parts\":[{\"data\":{\"buyer\":\"Acme\",\"deliverBy\":\"2026-11-20\",\"item\":\"hoodie\",\"quantity\":200,\"request\":\"quote\"}}],\"role\":\"ROLE_USER\"}},\"id\":\"0a87edb6-e86c-43c4-9390-016a50653fef\"}",
+   "response": "{\"jsonrpc\":\"2.0\",\"id\":\"0a87edb6-e86c-43c4-9390-016a50653fef\",\"result\":{\"message\":{\"messageId\":\"01a18ee8-2d72-7d4a-b1e0-d0f339307104\",\"contextId\":\"01a18ee8-2d70-7c6b-a593-cc29e7b9ba38\",\"parts\":[{\"data\":{\"agentUrl\":\"http://localhost:8090/a/contoso\",\"currency\":\"EUR\",\"item\":\"hoodie\",\"leadDays\":30,\"quant"
+  },
+  {
+   "id": 17,
+   "at": "2026-10-31T01:22:23.088999+03:00",
+   "direction": "out",
+   "taskId": "01a18ee8-2d6d-7534-9240-4178597cb7a0",
+   "parentTaskId": "01a18ee8-2d65-7478-950e-4156d000acee",
+   "contextId": "01a18ee8-2d70-70a7-96a7-1ec3e5e8b8ff",
+   "sender": "acme-buyer",
+   "recipient": "northwind",
+   "method": "POST",
+   "url": "/a/northwind/invoke",
+   "status": 200,
+   "durationMs": 0,
+   "headers": {
+    "request": {
+     "A2A-Version": "1.0",
+     "Content-Type": "application/json",
+     "Lagrange-Sender": "acme-buyer",
+     "Lagrange-Task": "01a18ee8-2d6d-7534-9240-4178597cb7a0"
+    },
+    "response": {
+     "Content-Type": "text/event-stream"
+    }
+   },
+   "request": "{\"jsonrpc\":\"2.0\",\"method\":\"SendStreamingMessage\",\"params\":{\"message\":{\"messageId\":\"01a18ee8-2d6a-7c9e-8700-7d05ca6fc4f0\",\"parts\":[{\"data\":{\"buyer\":\"Acme\",\"deliverBy\":\"2026-11-20\",\"item\":\"hoodie\",\"quantity\":200,\"request\":\"quote\"}}],\"role\":\"ROLE_USER\"}},\"id\":\"c95dbe70-160b-4325-9c31-5c9a2e157edd\"}",
+   "response": "id: 5e933cc5-6121-4bf2-b568-2171ded66e13\ndata: {\"jsonrpc\":\"2.0\",\"id\":\"c95dbe70-160b-4325-9c31-5c9a2e157edd\",\"result\":{\"message\":{\"messageId\":\"01a18ee8-2d71-7616-9ab2-89cc4d08135a\",\"contextId\":\"01a18ee8-2d71-756a-a65c-581c0e9c8495\",\"parts\":[{\"data\":{\"agentUrl\":\"http://localhost:8090/a/northwind\",\"cur"
+  },
+  {
+   "id": 18,
+   "at": "2026-10-31T01:22:23.090467+03:00",
+   "direction": "out",
+   "taskId": "01a18ee8-2d6d-7bb4-a23d-542298a0f497",
+   "parentTaskId": "01a18ee8-2d65-7478-950e-4156d000acee",
+   "contextId": "01a18ee8-2d70-7c6b-a593-cc29e7b9ba38",
+   "sender": "acme-buyer",
+   "recipient": "contoso",
+   "method": "POST",
+   "url": "/a/contoso/invoke",
+   "status": 200,
+   "durationMs": 0,
+   "headers": {
+    "request": {
+     "A2A-Version": "1.0",
+     "Content-Type": "application/json",
+     "Lagrange-Sender": "acme-buyer",
+     "Lagrange-Task": "01a18ee8-2d6d-7bb4-a23d-542298a0f497"
+    },
+    "response": {
+     "Content-Type": "text/event-stream"
+    }
+   },
+   "request": "{\"jsonrpc\":\"2.0\",\"method\":\"SendStreamingMessage\",\"params\":{\"message\":{\"messageId\":\"01a18ee8-2d6a-7d3a-a2c2-0845f3fe5ea4\",\"parts\":[{\"data\":{\"buyer\":\"Acme\",\"deliverBy\":\"2026-11-20\",\"item\":\"hoodie\",\"quantity\":200,\"request\":\"quote\"}}],\"role\":\"ROLE_USER\"}},\"id\":\"8e7c363c-65cb-4445-855e-56dc363e1d88\"}",
+   "response": "id: c0497261-bdfa-4424-a2b8-e0eda46e4494\ndata: {\"jsonrpc\":\"2.0\",\"id\":\"8e7c363c-65cb-4445-855e-56dc363e1d88\",\"result\":{\"message\":{\"messageId\":\"01a18ee8-2d72-7d4a-b1e0-d0f339307104\",\"contextId\":\"01a18ee8-2d72-7c87-b224-83d9388e776b\",\"parts\":[{\"data\":{\"agentUrl\":\"http://localhost:8090/a/contoso\",\"curre"
+  },
+  {
+   "id": 32,
+   "at": "2026-10-31T01:22:25.212393+03:00",
+   "direction": "out",
+   "taskId": "01a18ee8-2d65-7478-950e-4156d000acee",
+   "contextId": "01a18ee8-2d67-7979-b03b-e6eae6c5375f",
+   "sender": "ada",
+   "recipient": "acme-buyer",
+   "method": "POST",
+   "url": "/a/acme-buyer/invoke",
+   "status": 200,
+   "durationMs": 4027,
+   "headers": {
+    "request": {
+     "A2A-Version": "1.0",
+     "Content-Type": "application/json",
+     "Lagrange-Sender": "ada",
+     "Lagrange-Task": "01a18ee8-2d65-7478-950e-4156d000acee"
+    },
+    "response": {
+     "Content-Type": "text/event-stream"
+    }
+   },
+   "request": "{\"jsonrpc\":\"2.0\",\"method\":\"SendStreamingMessage\",\"params\":{\"message\":{\"messageId\":\"01a18ee8-35b6-73b5-8375-78fe768e95c7\",\"contextId\":\"01a18ee8-2d68-7eb9-bff0-6af25129f469\",\"extensions\":[\"https://github.com/a2aproject/experimental-ext-structured-input/tree/main/v1\"],\"metadata\":{\"https://threeagents.d",
+   "response": "id: e6a01c7c-555a-49f7-b17e-b513ba0553a6\ndata: {\"jsonrpc\":\"2.0\",\"id\":\"d68caf40-a3a2-4959-91e4-bef65fbd0c5e\",\"result\":{\"statusUpdate\":{\"contextId\":\"01a18ee8-2d68-7eb9-bff0-6af25129f469\",\"status\":{\"message\":{\"messageId\":\"01a18ee8-35be-78ae-814e-24f821d4d169\",\"contextId\":\"01a18ee8-2d68-7eb9-bff0-6af251"
+  },
+  {
+   "id": 25,
+   "at": "2026-10-31T01:22:25.216182+03:00",
+   "direction": "in",
+   "taskId": "01a18ee8-35c0-7497-b0d4-d92048861992",
+   "parentTaskId": "01a18ee8-2d65-7478-950e-4156d000acee",
+   "contextId": "01a18ee8-35c1-7cec-b972-0870a49523b4",
+   "sender": "acme-buyer",
+   "recipient": "northwind",
+   "method": "POST",
+   "url": "/a/northwind/rpc",
+   "status": 200,
+   "durationMs": 102,
+   "headers": {
+    "request": {
+     "A2A-Version": "1.0",
+     "Content-Type": "application/json",
+     "Lagrange-Task": "01a18ee8-2d65-7478-950e-4156d000acee",
+     "User-Agent": "Go-http-client/1.1"
+    },
+    "response": {
+     "Content-Type": "application/json"
+    }
+   },
+   "request": "{\"jsonrpc\":\"2.0\",\"method\":\"SendMessage\",\"params\":{\"configuration\":{\"returnImmediately\":true,\"taskPushNotificationConfig\":{\"taskId\":\"\",\"token\":\"c2f9d6c50dfaa75f82ad9516de67be6a\",\"url\":\"http://localhost:8090/t/acme-buyer/webhook\"}},\"message\":{\"messageId\":\"01a18ee8-35be-78e1-9b05-c8723a76ba05\",\"parts\":",
+   "response": "{\"jsonrpc\":\"2.0\",\"id\":\"e7cfcfe2-b8b9-4334-97dd-bdfd7f265397\",\"result\":{\"task\":{\"id\":\"01a18ee8-35c0-7497-b0d4-d92048861992\",\"artifacts\":[{\"artifactId\":\"01a18ee8-35c3-7812-b828-7a3b01f427e5\",\"name\":\"fulfilment\",\"parts\":[{\"text\":\"Production scheduled.\"}]}],\"contextId\":\"01a18ee8-35c1-7cec-b972-0870a4952"
+  },
+  {
+   "id": 27,
+   "at": "2026-10-31T01:22:25.219101+03:00",
+   "direction": "out",
+   "taskId": "01a18ee8-35c0-7497-b0d4-d92048861992",
+   "parentTaskId": "01a18ee8-2d65-7478-950e-4156d000acee",
+   "contextId": "01a18ee8-35c1-7cec-b972-0870a49523b4",
+   "sender": "acme-buyer",
+   "recipient": "northwind",
+   "method": "POST",
+   "url": "/a/northwind/invoke",
+   "status": 200,
+   "durationMs": 4004,
+   "headers": {
+    "request": {
+     "A2A-Version": "1.0",
+     "Content-Type": "application/json",
+     "Lagrange-Sender": "acme-buyer",
+     "Lagrange-Task": "01a18ee8-35c0-7497-b0d4-d92048861992"
+    },
+    "response": {
+     "Content-Type": "text/event-stream"
+    }
+   },
+   "request": "{\"jsonrpc\":\"2.0\",\"method\":\"SendStreamingMessage\",\"params\":{\"message\":{\"messageId\":\"01a18ee8-35be-78e1-9b05-c8723a76ba05\",\"parts\":[{\"data\":{\"buyer\":\"Acme\",\"deliverBy\":\"2026-11-20\",\"item\":\"hoodie\",\"quantity\":200,\"quoteId\":\"Q-38972e33\",\"request\":\"order\"}}],\"role\":\"ROLE_USER\"}},\"id\":\"3440a59b-a5ca-440f-",
+   "response": "id: ecfa6ce2-10d0-4ae6-b2e7-ce163f4ac1e2\ndata: {\"jsonrpc\":\"2.0\",\"id\":\"3440a59b-a5ca-440f-936f-780c665a81a8\",\"result\":{\"task\":{\"id\":\"01a18ee8-35c3-763d-add5-11334dcad429\",\"contextId\":\"01a18ee8-35c3-768b-b9f7-4f162683d33c\",\"history\":[{\"messageId\":\"01a18ee8-35be-78e1-9b05-c8723a76ba05\",\"parts\":[{\"data\""
+  },
+  {
+   "id": 22,
+   "at": "2026-10-31T01:22:25.223402+03:00",
+   "direction": "push",
+   "taskId": "01a18ee8-35c0-7497-b0d4-d92048861992",
+   "contextId": "01a18ee8-35c1-7cec-b972-0870a49523b4",
+   "sender": "northwind",
+   "recipient": "acme-buyer",
+   "method": "POST",
+   "url": "/webhook",
+   "status": 204,
+   "durationMs": 0,
+   "headers": {
+    "request": {
+     "Content-Type": "application/json",
+     "User-Agent": "Go-http-client/1.1"
+    },
+    "response": {}
+   },
+   "request": "{\"task\":{\"id\":\"01a18ee8-35c0-7497-b0d4-d92048861992\",\"contextId\":\"01a18ee8-35c1-7cec-b972-0870a49523b4\",\"history\":[{\"messageId\":\"01a18ee8-35be-78e1-9b05-c8723a76ba05\",\"parts\":[{\"data\":{\"buyer\":\"Acme\",\"deliverBy\":\"2026-11-20\",\"item\":\"hoodie\",\"quantity\":200,\"quoteId\":\"Q-38972e33\",\"request\":\"order\"}}],",
+   "response": ""
+  },
+  {
+   "id": 23,
+   "at": "2026-10-31T01:22:25.226525+03:00",
+   "direction": "push",
+   "taskId": "01a18ee8-35c0-7497-b0d4-d92048861992",
+   "contextId": "01a18ee8-35c1-7cec-b972-0870a49523b4",
+   "sender": "northwind",
+   "recipient": "acme-buyer",
+   "method": "POST",
+   "url": "/webhook",
+   "status": 204,
+   "durationMs": 0,
+   "headers": {
+    "request": {
+     "Content-Type": "application/json",
+     "User-Agent": "Go-http-client/1.1"
+    },
+    "response": {}
+   },
+   "request": "{\"statusUpdate\":{\"contextId\":\"01a18ee8-35c1-7cec-b972-0870a49523b4\",\"status\":{\"message\":{\"messageId\":\"01a18ee8-35c3-77fe-a774-14474db5dcb1\",\"contextId\":\"01a18ee8-35c1-7cec-b972-0870a49523b4\",\"parts\":[{\"text\":\"Order received: 200 \u00d7 hoodie against quote Q-38972e33.\"}],\"role\":\"ROLE_AGENT\",\"taskId\":\"01a",
+   "response": ""
+  },
+  {
+   "id": 24,
+   "at": "2026-10-31T01:22:25.228661+03:00",
+   "direction": "push",
+   "taskId": "01a18ee8-35c0-7497-b0d4-d92048861992",
+   "contextId": "01a18ee8-35c1-7cec-b972-0870a49523b4",
+   "sender": "northwind",
+   "recipient": "acme-buyer",
+   "method": "POST",
+   "url": "/webhook",
+   "status": 204,
+   "durationMs": 0,
+   "headers": {
+    "request": {
+     "Content-Type": "application/json",
+     "User-Agent": "Go-http-client/1.1"
+    },
+    "response": {}
+   },
+   "request": "{\"artifactUpdate\":{\"artifact\":{\"artifactId\":\"01a18ee8-35c3-7812-b828-7a3b01f427e5\",\"name\":\"fulfilment\",\"parts\":[{\"text\":\"Production scheduled.\"}]},\"contextId\":\"01a18ee8-35c1-7cec-b972-0870a49523b4\",\"taskId\":\"01a18ee8-35c0-7497-b0d4-d92048861992\"}}",
+   "response": ""
+  },
+  {
+   "id": 26,
+   "at": "2026-10-31T01:22:27.222807+03:00",
+   "direction": "push",
+   "taskId": "01a18ee8-35c0-7497-b0d4-d92048861992",
+   "contextId": "01a18ee8-35c1-7cec-b972-0870a49523b4",
+   "sender": "northwind",
+   "recipient": "acme-buyer",
+   "method": "POST",
+   "url": "/webhook",
+   "status": 204,
+   "durationMs": 0,
+   "headers": {
+    "request": {
+     "Content-Type": "application/json",
+     "User-Agent": "Go-http-client/1.1"
+    },
+    "response": {}
+   },
+   "request": "{\"artifactUpdate\":{\"append\":true,\"artifact\":{\"artifactId\":\"01a18ee8-35c3-7812-b828-7a3b01f427e5\",\"parts\":[{\"text\":\"Printed and quality-checked.\"}]},\"contextId\":\"01a18ee8-35c1-7cec-b972-0870a49523b4\",\"taskId\":\"01a18ee8-35c0-7497-b0d4-d92048861992\"}}",
+   "response": ""
+  },
+  {
+   "id": 28,
+   "at": "2026-10-31T01:22:29.226282+03:00",
+   "direction": "push",
+   "taskId": "01a18ee8-35c0-7497-b0d4-d92048861992",
+   "contextId": "01a18ee8-35c1-7cec-b972-0870a49523b4",
+   "sender": "northwind",
+   "recipient": "acme-buyer",
+   "method": "POST",
+   "url": "/webhook",
+   "status": 204,
+   "durationMs": 1,
+   "headers": {
+    "request": {
+     "Content-Type": "application/json",
+     "User-Agent": "Go-http-client/1.1"
+    },
+    "response": {}
+   },
+   "request": "{\"artifactUpdate\":{\"append\":true,\"artifact\":{\"artifactId\":\"01a18ee8-35c3-7812-b828-7a3b01f427e5\",\"parts\":[{\"text\":\"Packed and handed to the carrier.\"}]},\"contextId\":\"01a18ee8-35c1-7cec-b972-0870a49523b4\",\"lastChunk\":true,\"taskId\":\"01a18ee8-35c0-7497-b0d4-d92048861992\"}}",
+   "response": ""
+  },
+  {
+   "id": 29,
+   "at": "2026-10-31T01:22:29.231888+03:00",
+   "direction": "push",
+   "taskId": "01a18ee8-35c0-7497-b0d4-d92048861992",
+   "contextId": "01a18ee8-35c1-7cec-b972-0870a49523b4",
+   "sender": "northwind",
+   "recipient": "acme-buyer",
+   "method": "POST",
+   "url": "/webhook",
+   "status": 204,
+   "durationMs": 0,
+   "headers": {
+    "request": {
+     "Content-Type": "application/json",
+     "User-Agent": "Go-http-client/1.1"
+    },
+    "response": {}
+   },
+   "request": "{\"artifactUpdate\":{\"artifact\":{\"artifactId\":\"01a18ee8-4564-7cec-8cca-1e1b80ae05f4\",\"name\":\"order-confirmation\",\"parts\":[{\"data\":{\"currency\":\"EUR\",\"orderId\":\"O-065c3d7b\",\"quoteId\":\"Q-38972e33\",\"shipDate\":\"2026-11-07\",\"total\":5416,\"tracking\":\"TRK780B4253\"}}]},\"contextId\":\"01a18ee8-35c1-7cec-b972-0870a",
+   "response": ""
+  },
+  {
+   "id": 30,
+   "at": "2026-10-31T01:22:29.234981+03:00",
+   "direction": "push",
+   "taskId": "01a18ee8-35c0-7497-b0d4-d92048861992",
+   "contextId": "01a18ee8-35c1-7cec-b972-0870a49523b4",
+   "sender": "northwind",
+   "recipient": "acme-buyer",
+   "method": "POST",
+   "url": "/webhook",
+   "status": 204,
+   "durationMs": 0,
+   "headers": {
+    "request": {
+     "Content-Type": "application/json",
+     "User-Agent": "Go-http-client/1.1"
+    },
+    "response": {}
+   },
+   "request": "{\"statusUpdate\":{\"contextId\":\"01a18ee8-35c1-7cec-b972-0870a49523b4\",\"status\":{\"message\":{\"messageId\":\"01a18ee8-4564-7d1f-8dfd-5316c52628f3\",\"contextId\":\"01a18ee8-35c1-7cec-b972-0870a49523b4\",\"parts\":[{\"text\":\"Shipped. Order O-065c3d7b, tracking TRK780B4253, arrives 2026-11-07.\"}],\"role\":\"ROLE_AGENT\"",
+   "response": ""
+  },
+  {
+   "id": 31,
+   "at": "2026-10-31T01:22:29.23669+03:00",
+   "direction": "in",
+   "taskId": "01a18ee8-35c0-7497-b0d4-d92048861992",
+   "parentTaskId": "01a18ee8-2d65-7478-950e-4156d000acee",
+   "contextId": "01a18ee8-35c1-7cec-b972-0870a49523b4",
+   "sender": "acme-buyer",
+   "recipient": "northwind",
+   "method": "POST",
+   "url": "/a/northwind/rpc",
+   "status": 200,
+   "durationMs": 0,
+   "headers": {
+    "request": {
+     "A2A-Version": "1.0",
+     "Content-Type": "application/json",
+     "Lagrange-Task": "01a18ee8-2d65-7478-950e-4156d000acee",
+     "User-Agent": "Go-http-client/1.1"
+    },
+    "response": {
+     "Content-Type": "application/json"
+    }
+   },
+   "request": "{\"jsonrpc\":\"2.0\",\"method\":\"GetTask\",\"params\":{\"id\":\"01a18ee8-35c0-7497-b0d4-d92048861992\"},\"id\":\"0c6f8e44-1ae7-4b5f-ba0e-9bf20f43708e\"}",
+   "response": "{\"jsonrpc\":\"2.0\",\"id\":\"0c6f8e44-1ae7-4b5f-ba0e-9bf20f43708e\",\"result\":{\"id\":\"01a18ee8-35c0-7497-b0d4-d92048861992\",\"artifacts\":[{\"artifactId\":\"01a18ee8-35c3-7812-b828-7a3b01f427e5\",\"name\":\"fulfilment\",\"parts\":[{\"text\":\"Production scheduled.\"},{\"text\":\"Printed and quality-checked.\"},{\"text\":\"Packed a"
+  }
+ ]
+}
