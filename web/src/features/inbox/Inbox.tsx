@@ -139,7 +139,10 @@ function Thread({ handle, conv, me, address, kind, onChange }: { handle: string;
   const question = [...tasks].reverse().find((t) => t.sender === me && waitsFor(t, me) && !t.input)
   const lastUpdate = conv?.latest.updatedAt
 
-  useEffect(() => end.current?.scrollIntoView({ block: 'end' }), [tasks.length, lastUpdate])
+  // Block body: Chrome's scrollIntoView returns a promise, which React would call as a cleanup.
+  useEffect(() => {
+    end.current?.scrollIntoView({ block: 'end' })
+  }, [tasks.length, lastUpdate])
 
   const send = async (e: FormEvent) => {
     e.preventDefault()

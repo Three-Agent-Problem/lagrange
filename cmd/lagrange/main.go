@@ -152,7 +152,10 @@ func runTunnel(ctx context.Context, args []string) error {
 		if err != nil || target.Host == "" {
 			return fmt.Errorf("tunnel: invalid --to URL %q", *to)
 		}
-		handler = tunnel.Proxy(target)
+		handler = tunnel.Proxy(target, logger)
+		if err := tunnel.Probe(ctx, target); err != nil {
+			logger.Warn("nothing answers at "+*to+" yet: start your agent there (the tunnel connects anyway, and tasks fail until it answers)", "error", err)
+		}
 	case *acp != "":
 		h, closeFn, err := acpHandler(ctx, strings.Fields(*acp), *dir, *name, logger)
 		if err != nil {

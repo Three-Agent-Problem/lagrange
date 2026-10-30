@@ -88,7 +88,25 @@ func (p plainHTTP) RoundTrip(r *http.Request) (*http.Response, error) {
 		r = r.Clone(r.Context())
 		r.URL.Scheme = "http"
 	}
-	return p.rt.RoundTrip(r)
+	resp, err := p.rt.RoundTrip(r)
+	if err == nil && resp.StatusCode == http.StatusBadGateway && resp.Header.Get(HeaderUnreachable) != "" {
+		reason := resp.Header.Get(HeaderUnreachable)
+		resp.Body.Close()
+		return nil, &UnreachableError{Reason: reason}
+	}
+	return resp, err
+}
+
+// HeaderUnreachable is set on the 502 a tunnel client answers with when nothing answers
+// at its target: the tunnel is up but the agent behind it isn't.
+const HeaderUnreachable = "Lagrange-Agent-Unreachable"
+
+// UnreachableError is what a session's Transport returns when the tunnel is connected
+// but the agent behind it doesn't answer.
+type UnreachableError struct{ Reason string }
+
+func (e *UnreachableError) Error() string {
+	return "the tunnel is connected but the agent behind it is not answering: " + e.Reason
 }
 
 // Done implements mailbox.Session.
@@ -303,13 +321,51 @@ func serveOnce(ctx context.Context, wsURL string, cfg ClientConfig) error {
 }
 
 // Proxy returns a handler that forwards every request to target (for example
-// http://localhost:9001), streaming responses as they come.
-func Proxy(target *url.URL) http.Handler {
+// http://localhost:9001), streaming responses as they come. When nothing answers at
+// target, it says so in HeaderUnreachable, and logs to logger (nil for slog.Default).
+func Proxy(target *url.URL, logger *slog.Logger) http.Handler {
+	if logger == nil {
+		logger = slog.Default()
+	}
 	return &httputil.ReverseProxy{
 		Rewrite: func(r *httputil.ProxyRequest) {
 			r.SetURL(target)
 			r.Out.Host = target.Host
 		},
 		FlushInterval: -1,
+		ErrorHandler: func(w http.ResponseWriter, r *http.Request, err error) {
+			reason := fmt.Sprintf("nothing answers at %s (%v). Is the agent running there?", target, unwrapOp(err))
+			logger.Warn("tunnel: "+reason, "request", r.Method+" "+r.URL.Path)
+			w.Header().Set(HeaderUnreachable, reason)
+			http.Error(w, reason, http.StatusBadGateway)
+		},
 	}
+}
+
+// unwrapOp shortens "dial tcp [::1]:9001: connect: connection refused" to its cause.
+func unwrapOp(err error) error {
+	var op *net.OpError
+	if errors.As(err, &op) && op.Err != nil {
+		return op.Err
+	}
+	return err
+}
+
+// Probe reports whether something answers HTTP at target, for a warning at startup.
+func Probe(ctx context.Context, target *url.URL) error {
+	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, target.JoinPath("/.well-known/agent-card.json").String(), nil)
+	if err != nil {
+		return err
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return unwrapOp(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("its agent card (%s) answered %s", req.URL, resp.Status)
+	}
+	return nil
 }

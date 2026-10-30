@@ -32,6 +32,7 @@ import (
 	"github.com/three-agent-problem/lagrange/directory"
 	"github.com/three-agent-problem/lagrange/links"
 	"github.com/three-agent-problem/lagrange/mailbox"
+	"github.com/three-agent-problem/lagrange/tunnel"
 )
 
 const (
@@ -99,11 +100,21 @@ func (r *Relay) Execute(ctx context.Context, ec *a2asrv.ExecutorContext) iter.Se
 				return
 			}
 			r.log().Warn("relay: forwarding failed", "address", addr.Handle, "task", ec.TaskID, "error", err)
+			// An agent that isn't answering behind its tunnel fails the task with the reason
+			// instead of retrying in the background while the caller waits.
+			text := "Lagrange could not reach " + addr.Name() + ": " + err.Error()
+			var unreachable *tunnel.UnreachableError
+			if errors.As(err, &unreachable) {
+				text = addr.Name() + "'s tunnel is connected, but " + unreachable.Reason
+				if !rec.started {
+					emit(a2a.NewSubmittedTask(ec, ec.Message))
+				}
+			}
 			if !rec.started {
 				yield(nil, err)
 				return
 			}
-			msg := a2a.NewMessageForTask(a2a.MessageRoleAgent, ec, a2a.NewTextPart("Lagrange could not reach "+addr.Name()+": "+err.Error()))
+			msg := a2a.NewMessageForTask(a2a.MessageRoleAgent, ec, a2a.NewTextPart(text))
 			emit(a2a.NewStatusUpdateEvent(ec, a2a.TaskStateFailed, msg))
 		}
 	}

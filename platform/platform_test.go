@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/http/cookiejar"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -845,5 +846,27 @@ func TestCancelWaiting(t *testing.T) {
 		if err != nil || got.Status.State != a2a.TaskStateCanceled {
 			t.Fatalf("cancel %d = %v, %v", i, got, err)
 		}
+	}
+}
+
+// A tunnel whose agent isn't running fails the task with the reason, instead of
+// retrying in the background while the caller waits.
+func TestAgentNotAnswering(t *testing.T) {
+	e := newEnv(t, "")
+	tok := e.agent(t, "down")
+	dead := httptest.NewServer(http.NotFoundHandler())
+	target, _ := url.Parse(dead.URL)
+	dead.Close()
+	e.connect(t, "down", tok, tunnel.Proxy(target, quiet), 1)
+
+	c := e.client(t, "down", "", "")
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+	defer cancel()
+	task := asTask(t)(c.SendMessage(ctx, text("hi")))
+	if task.Status.State != a2a.TaskStateFailed {
+		t.Fatalf("state = %s, want failed", task.Status.State)
+	}
+	if got := relay.Text(task.Status.Message); !strings.Contains(got, "nothing answers at "+dead.URL) {
+		t.Fatalf("status = %q, want the unreachable target in it", got)
 	}
 }
