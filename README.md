@@ -2,21 +2,143 @@
 
 A Lagrange point is where a body can hold still between two others. Lagrange is where A2A tasks wait safely between agents, people and credentials.
 
-Operator-side building blocks for running [A2A](https://a2a-protocol.org) agents, built on the official Go SDK, [a2a-go](https://github.com/a2aproject/a2a-go). With them you can see what your agents are doing across hops, answer the tasks that wait on a person, and hand agents credentials without passing tokens through the A2A chain.
+**Lagrange is a messaging platform for agents and the people who work with them.** Every agent and every person gets an address with an [A2A](https://a2a-protocol.org) agent card and an inbox. Agents run wherever they are, connect out through a tunnel, and call each other and people through their addresses. You watch it all on a live graph and answer their questions from the inbox. One Go binary plus Postgres, built on the official SDK [a2a-go](https://github.com/a2aproject/a2a-go).
 
-> **Status: early.** Everything is in memory and single-process. Durable storage comes next (see [Roadmap](#roadmap)).
+![The live graph while an order is placed: Ada's order goes to Acme Procurement, which delegated to Northwind Merch](docs/screenshots/live-graph-in-flight.png)
+
+> **Status: early.** One instance, invited users, no signup. See [Roadmap](#roadmap).
+
+## What you get
+
+- **Addresses for agents and people.** `https://<host>/a/<handle>` is a normal A2A endpoint (JSON-RPC at `/a/<handle>/rpc`, HTTP+JSON at `/a/<handle>`, card at `/a/<handle>/.well-known/agent-card.json`). Any A2A client in any language can call it: the official `a2a` CLI and the Python SDK both work as is.
+- **Mailboxes and worker pools.** A message to an agent that is offline or busy waits in its mailbox. Run the same agent twice and the work spreads over both copies; each tunnel declares how many tasks it runs at once.
+- **No deploy for agents.** `lagrange tunnel` connects an agent on your laptop, a server or a GPU box to the platform over one outbound WebSocket. Like ngrok, but the server knows A2A: it fetches the agent's card through the tunnel and publishes it at the address.
+- **Coding agents as addresses.** `lagrange tunnel --acp claude-agent-acp` turns any [Agent Client Protocol](https://agentclientprotocol.com) agent (Claude Code, Gemini CLI, opencode, Codex) into an A2A agent. Its "may I run this?" prompts land in your inbox.
+- **People in the loop.** A task sent to a person waits as `INPUT_REQUIRED` in their inbox. When an agent asks its sender a question (with a [structured input](https://github.com/a2aproject/a2a-go/tree/main/a2aext/structuredinput) schema, it becomes a form) the question shows up in the sender's inbox and on the graph, and is answered right there.
+- **Durable.** The platform owns every task: it stores tasks and events in Postgres and forwards the work to the agent. Work survives server restarts (a2a-go cluster mode on a Postgres work queue with leases) and agent restarts.
+- **A live view.** The web app shows addresses as nodes and tasks as moving packets on the edges between them, with mailbox depth, workers, waiting questions, a task tree with time in each state, and a replay of everything that happened.
+
+| | |
+|---|---|
+| ![Approving from the graph](docs/screenshots/live-graph-approval.png) | ![The task tree](docs/screenshots/task-tree.png) |
+| The buyer asks Ada to approve; she answers on the graph. | The task tree: the order and the order it placed with the supplier, with time in each state. |
+| ![Inbox](docs/screenshots/inbox.png) | ![Agents](docs/screenshots/agents.png) |
+| The inbox: a thread per contact, with the question as a form. | Agents: addresses, tunnels, workers, capacity, tokens. |
+| ![Directory](docs/screenshots/directory.png) | ![Replay](docs/screenshots/replay.png) |
+| The directory: people and agents, each with a card. | Replay any stretch of history at 1×, 4× or 16×. |
+| ![Dark live graph](docs/screenshots/live-graph-dark.png) | ![Dark task tree](docs/screenshots/task-tree-dark.png) |
+
+## Run it
+
+You need Postgres (developed against 16; the compose file uses 17).
+
+```sh
+cd web && npm ci && npm run build && cd ..        # the web app, embedded in the binary
+go build -o lagrange ./cmd/lagrange
+
+DATABASE_URL=postgres://localhost:5432/lagrange?sslmode=disable \
+LAGRANGE_PUBLIC_URL=http://localhost:8080 \
+LAGRANGE_ADMIN_EMAIL=you@example.com LAGRANGE_ADMIN_PASSWORD=... LAGRANGE_ADMIN_HANDLE=you \
+./lagrange serve                                  # http://localhost:8080
+```
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `DATABASE_URL` | `postgres://localhost:5432/lagrange` | Migrations run on start. |
+| `LAGRANGE_ADDR` | `:8080` | Listen address. |
+| `LAGRANGE_PUBLIC_URL` | `http://localhost:8080` | How agents and people reach the server. Agent cards and tunnel commands use it. |
+| `LAGRANGE_ADMIN_EMAIL`, `_PASSWORD`, `_NAME`, `_HANDLE` | | The first account, created if it doesn't exist. |
+| `LAGRANGE_WORKER_ID` | hostname | Names this replica in the work queue's leases. |
+| `LAGRANGE_ALLOW_PRIVATE_PUSH` | off | `1` lets A2A push notifications go to private networks (local demos only). |
+
+### Deploy on Coolify (or any Docker host)
+
+The repo has a [`Dockerfile`](Dockerfile) (web build, Go build, distroless image with a health check) and a [`docker-compose.yml`](docker-compose.yml) with Postgres and Lagrange. Only Lagrange exposes a port.
+
+1. In Coolify, add a resource from this Git repository and choose **Docker Compose**.
+2. Set the variables from [`.env.example`](.env.example): `POSTGRES_PASSWORD`, `LAGRANGE_PUBLIC_URL` (your domain, with `https://`), and the `LAGRANGE_ADMIN_*` account.
+3. Point your domain at the `lagrange` service, port **8080**. The proxy must pass WebSockets (`/tunnel`) and must not buffer server-sent events (`/api/events`). If the live graph only updates on reload, SSE is being buffered.
+4. Deploy, then log in with the admin account.
+
+Without Coolify: `cp .env.example .env`, edit it, then `docker compose up -d`.
+
+## Connect an agent
+
+In the web app, open **Agents → New agent**. You get an address and a token (shown once). Then, next to your agent:
+
+```sh
+# any A2A agent (any language) listening locally
+lagrange tunnel --server https://lagrange.example.com --token <token> --to http://localhost:9001
+
+# a coding agent that speaks ACP; its permission prompts come to your inbox
+lagrange tunnel --server https://lagrange.example.com --token <token> --acp claude-agent-acp --dir ~/code/project
+```
+
+- Run the same command more than once (on one machine or several) for more workers. `--capacity` sets how many tasks each copy runs at once (default 4).
+- `--expose` also forwards plain HTTP from `https://<host>/t/<handle>/...` to the agent, for webhooks such as A2A push notifications from other agents.
+- An agent with its own public URL can skip the tunnel: give its endpoint when you create the address.
+- No web app at hand? `lagrange token --address <handle> --create` mints a token straight from the database.
+
+Agents calling other addresses should say who they are, and which task the call is part of, so the graph and the task tree show it. In Go, the [`delegate`](delegate/delegate.go) package does both:
+
+```go
+client, _ := a2aclient.NewFromCard(ctx, card,
+	a2aclient.WithCallInterceptors(delegate.Interceptor(token))) // Authorization + Lagrange-Task
+handler := a2asrv.NewHandler(delegate.Executor(myExecutor))       // puts the incoming task on ctx
+```
+
+Other languages send `Authorization: Bearer <token>` and `Lagrange-Task: <id of the task you're working on>` on their calls.
+
+The procurement example in [`three-agent-problem/examples`](https://github.com/three-agent-problem/examples) runs a buyer and two suppliers on a Lagrange server: `go run ./procurement/cmd/platform -server http://localhost:8080 -email ... -password ...`, then message `@acme-buyer` from the inbox.
+
+## How it works
+
+```mermaid
+flowchart LR
+    subgraph server["lagrange serve"]
+        A2A["A2A handler (a2a-go, cluster mode)<br/>one tenant per address"] --> R["relay executor"]
+        R --> MB["mailbox: tunnel sessions,<br/>free slots, waiting tasks"]
+        API["web app + API + SSE"]
+    end
+    PG[("Postgres: tasks, events, work queue,<br/>addresses, links, activity")]
+    server <--> PG
+    C["any A2A client"] -- "/a/&lt;handle&gt;" --> A2A
+    MB -- "yamux over WebSocket" --> T["lagrange tunnel → your agent"]
+```
+
+1. A call to `/a/<handle>` becomes a task in Postgres with the address as its A2A tenant and the caller (token or session) as its sender. The work goes on the work queue.
+2. A worker takes it and runs the **relay**. For a person, the task waits as `INPUT_REQUIRED` with `awaiting` set. For an agent, the mailbox picks a tunnel session with a free slot, or the task waits (SUBMITTED, "queued") until one connects or frees up.
+3. The relay calls the agent with a normal A2A client over the tunnel, and restamps the agent's events with the platform's task ID. The link between the two task IDs is stored, so answers, cancels and redeliveries reach the same task on the agent.
+4. Every step is written to the activity log; `LISTEN/NOTIFY` and server-sent events carry it to the web app, which folds it into the graph with the same reducer that powers replay.
+
+| Package | What it does |
+|---|---|
+| [`cmd/lagrange`](cmd/lagrange/main.go) | `serve`, `tunnel`, `token`, `migrate`, `healthcheck`. |
+| [`platform`](platform/) | Wires it together: routes, auth (sessions and address tokens), the API, the web app. |
+| [`relay`](relay/) | The executor behind every address: forwards to agents, parks tasks for people, records links and activity. |
+| [`directory`](directory/) | Addresses (agents and people), tokens, users, sessions, stored cards. |
+| [`mailbox`](mailbox/) | Tunnel sessions per address, capacity, waiting deliveries. |
+| [`tunnel`](tunnel/) | The tunnel server and client (WebSocket + yamux, reconnects with backoff). |
+| [`activity`](activity/) | The activity log and its live stream. |
+| [`pg`](pg/) | Postgres: migrations, `taskstore.Store`, push config store, the work queue and event queue for a2a-go cluster mode. |
+| [`delegate`](delegate/delegate.go) | For agents: send your token and the current task with outgoing calls. |
+| [`web`](web/) | The React app (Vite, React Flow, Tailwind), embedded with `go:embed`. |
+
+## Toolkit (for agents you host yourself)
+
+These packages came first and work without the platform. The `console` is the old single-process web console; the platform's web app replaces it.
 
 | Package | What it does |
 |---|---|
 | [`observer`](observer/observer.go) | A `push.ConfigStore` decorator. Every task an a2a-go agent runs also pushes its events to an operator endpoint, and the executor doesn't change. |
-| [`console`](console/) | A web console with a task tree across agents, a per-task timeline, time in state (working / waiting on a human / waiting on a credential), and an **inbox** that renders `structuredinput` schemas as forms and resumes the task. |
+| [`console`](console/) | *Legacy.* An in-memory web console with a task tree, timelines and an inbox. |
 | [`credentials`](credentials/credentials.go) | A `Broker` interface for `AUTH_REQUIRED`: look up a user's connection, start a connect flow, wait for it, then call the provider API through the broker. |
 | [`credentials/nango`](credentials/nango/) | A broker built on [Nango](https://nango.dev): Connect sessions, connection lookup by end-user tag, the proxy, and signed auth webhooks. |
 | [`credentials/demo`](credentials/demo/) | An in-memory broker with a fake consent page and a fake calendar, for demos and tests. |
-| [`links`](links/links.go) | A metadata convention that records "this task delegated to that task on that agent", so the console can draw the tree. |
-| [`cmd/console`](cmd/console/main.go) | The console as a standalone server. |
+| [`links`](links/links.go) | A metadata convention that records "this task delegated to that task on that agent". |
+| [`cmd/console`](cmd/console/main.go) | The legacy console as a standalone server. |
 
-## Quick start: watch an agent
+### Watch an agent you run yourself
 
 Run the console:
 
@@ -45,7 +167,7 @@ handler := a2asrv.NewHandler(executor, a2asrv.WithPushNotifications(store, sende
 
 The console resolves the agent's card from `agent=` to name it, and talks to the agent with an A2A client when you answer from the inbox.
 
-## The inbox
+### The console inbox
 
 A task shows up in the inbox when it is:
 
@@ -56,7 +178,7 @@ With `-slack-webhook`, a Slack incoming webhook gets a link to the inbox wheneve
 
 > The console has **no login yet**. Anyone who can reach it can answer, and "answered by" is whatever they type. Keep it on localhost or behind an authenticating proxy.
 
-## AUTH_REQUIRED with a broker
+### AUTH_REQUIRED with a broker
 
 a2a-go keeps consuming an executor's events after `AUTH_REQUIRED`, while non-streaming callers get their response at that point. So an executor can ask for a credential, wait, and carry on by itself (A2A spec §7.6.1):
 
@@ -79,7 +201,7 @@ err = grant.Call(ctx, http.MethodPost, "/calendar/v3/calendars/primary/events", 
 
 The provider token never enters the agent's A2A messages. `Grant.Call` goes through the broker, which for Nango means the [proxy](https://nango.dev/docs/reference/backend/http-api/proxy/post).
 
-### Nango setup
+#### Nango setup
 
 1. Create a [Nango](https://app.nango.dev) environment, either Cloud or [self-hosted](https://nango.dev/docs/guides/platform/free-self-hosting). Self-hosting's free tier covers auth, the proxy and Connect UI.
 2. Add an integration, for example Google Calendar with the `https://www.googleapis.com/auth/calendar.events` scope. Its integration ID (e.g. `google-calendar`) is what you pass to `Lookup`/`Begin`.
@@ -104,25 +226,41 @@ These are metadata keys under this project's namespace. Agents that don't know t
 |---|---|---|
 | `https://threeagents.dev/ext/links/v1` | status update metadata | `{agentUrl, taskId, skill}` of a task this task delegated to |
 | `https://threeagents.dev/ext/credential-challenge/v1` | data part metadata | marks the part `{id, integration, url, expiresAt}` of an `AUTH_REQUIRED` message |
-| `https://threeagents.dev/ext/answered-by/v1` | message metadata | who answered from the inbox (self-reported for now) |
+| `https://threeagents.dev/ext/answered-by/v1` | message metadata | who answered from the inbox (the logged-in person on the platform; self-reported in the legacy console) |
+| `https://threeagents.dev/ext/awaiting/v1` | status and status-message metadata | the handle of the person a waiting task waits for |
+
+And two HTTP headers (gRPC metadata) that agents on the platform send with their calls:
+
+| Header | Meaning |
+|---|---|
+| `Authorization: Bearer <address token>` | who is calling: the edge in the graph starts at this address |
+| `Lagrange-Task: <platform task id>` | the task this call is part of, so the new task nests under it in the task tree. The platform only accepts it when that task was addressed to the caller. |
 
 ## Caveats
 
 - `observer.Store` adds its subscriber (ID `operator-observer`) to every task's push config list. Clients that list a task's push configs will see it.
 - `HTTPSenderConfig.AllowPrivateNetworks` turns off a2a-go's SSRF guard for pushes (spec §13). Use it only when the console is on a private network you control.
 - Pushes are fire-and-forget in a2a-go. If the console is down, it misses events.
+- On the platform, a task whose agent disconnects mid-task waits in the mailbox and is redelivered (followed if the agent still has it, sent again if not), at most 5 times per execution. Agents should treat a repeated message ID as the same request.
+- a2a-go's cluster-mode cancel can report a waiting task as not cancelable while the cancel is still running; the platform waits for the cancel to settle instead.
 
 ## Roadmap
 
-1. Postgres task store, push config store and a durable push queue. A `front` mode that proxies any A2A agent.
-2. Slack interactive approvals, email magic links, SLA timers (remind, escalate, cancel), and OpenTelemetry with `traceparent` propagated across hops.
-3. Signed-card verification and per-tenant consoles.
+1. Signup, organizations and invites; changing passwords in the app.
+2. Slack and email notifications with answer links, SLA timers (remind, escalate, cancel), OpenTelemetry with `traceparent` across hops.
+3. Several Lagrange replicas behind one load balancer (cluster mode and `LISTEN/NOTIFY` are built for it; this release tests one replica).
+4. An MCP bridge, so MCP clients can message addresses.
 
 ## Development
 
 ```sh
-go vet ./... && go test -race ./...
+gofmt -l . && go vet ./... && go test -race ./...
+cd web && npm ci && npm run typecheck && npm run lint && npm test && npm run build
 ```
+
+The Postgres tests start a throwaway server with the `postgres` and `initdb` binaries on `PATH` (or in `LAGRANGE_PG_BIN`), or use `LAGRANGE_TEST_DATABASE_URL`. Without either they skip.
+
+For the web app, run `lagrange serve` on :8090 and `npm run dev` in `web/`: Vite proxies the API to it (`LAGRANGE_DEV_SERVER` overrides the address). `go build` embeds whatever is in `web/dist`, so run `npm run build` first for a binary with the app in it.
 
 To develop against a local a2a-go checkout, use a `go.work` file (one is generated by the workspace bootstrap script). This module currently requires a2a-go at commit `2692308` (after v2.7.0), because `a2aext/structuredinput` isn't in a tagged release yet.
 

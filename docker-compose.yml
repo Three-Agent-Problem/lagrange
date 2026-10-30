@@ -1,0 +1,41 @@
+# Lagrange and its Postgres. Only lagrange exposes a port; put your reverse proxy (or
+# Coolify's) in front of it and point the domain at port 8080. WebSockets (/tunnel)
+# and server-sent events (/api/events) must pass through the proxy unbuffered.
+#
+#   cp .env.example .env   # then edit it
+#   docker compose up -d
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: lagrange
+      POSTGRES_USER: lagrange
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U lagrange -d lagrange"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  lagrange:
+    build: .
+    image: lagrange:latest
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "${LAGRANGE_PORT:-8080}:8080"
+    environment:
+      DATABASE_URL: postgres://lagrange:${POSTGRES_PASSWORD}@postgres:5432/lagrange?sslmode=disable
+      LAGRANGE_PUBLIC_URL: ${LAGRANGE_PUBLIC_URL:?set LAGRANGE_PUBLIC_URL, e.g. https://lagrange.example.com}
+      LAGRANGE_ADMIN_EMAIL: ${LAGRANGE_ADMIN_EMAIL:?set LAGRANGE_ADMIN_EMAIL}
+      LAGRANGE_ADMIN_PASSWORD: ${LAGRANGE_ADMIN_PASSWORD:?set LAGRANGE_ADMIN_PASSWORD}
+      LAGRANGE_ADMIN_NAME: ${LAGRANGE_ADMIN_NAME:-Admin}
+      LAGRANGE_ADMIN_HANDLE: ${LAGRANGE_ADMIN_HANDLE:-admin}
+
+volumes:
+  pgdata:

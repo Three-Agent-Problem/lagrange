@@ -12,6 +12,13 @@ go.work.sum
 # Secrets and editor/OS noise
 .env
 .env.*
+!.env.example
 .DS_Store
 .idea/
 .vscode/
+
+# Web app: dependencies and build output (dist/.keep stays so go:embed always has a match)
+/web/node_modules/
+/web/dist/*
+!/web/dist/.keep
+/web/.vitest/

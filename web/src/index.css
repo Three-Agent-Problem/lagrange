@@ -1,0 +1,207 @@
+@import 'tailwindcss';
+@import '@xyflow/react/dist/style.css';
+
+@custom-variant dark (&:where([data-theme='dark'], [data-theme='dark'] *));
+
+/* The neet-syst palette; "wait" (violet) marks tasks parked on a person or on auth. */
+:root {
+  --bg: #f7f5f0;
+  --surface: #ffffff;
+  --surface-2: #f1eee7;
+  --ink: #1d1b18;
+  --muted: #6f6a61;
+  --line: #e4dfd5;
+  --accent: #5b4fe0;
+  --accent-soft: #ebe8ff;
+  --accent-ink: #ffffff;
+  --good: #1f9d63;
+  --good-soft: #e1f5ea;
+  --warn: #d48806;
+  --warn-soft: #fdf1d9;
+  --bad: #d64545;
+  --bad-soft: #fde6e4;
+  --auth: #9b51e0;
+  --auth-soft: #f3e8fd;
+  --canvas: #fbfaf7;
+  --grid: #e8e3d9;
+  --bubble-me: #e3f4dc;
+  --shadow: 0 1px 2px rgb(29 27 24 / 0.06), 0 4px 16px rgb(29 27 24 / 0.06);
+  color-scheme: light;
+}
+
+[data-theme='dark'] {
+  --bg: #15141a;
+  --surface: #1e1d25;
+  --surface-2: #26252f;
+  --ink: #f2f0ea;
+  --muted: #a39f97;
+  --line: #34323d;
+  --accent: #8b80ff;
+  --accent-soft: #2c2a4a;
+  --accent-ink: #120f2a;
+  --good: #3ccf8e;
+  --good-soft: #17352a;
+  --warn: #f0b13d;
+  --warn-soft: #3b2f15;
+  --bad: #ff6b6b;
+  --bad-soft: #3d1d1f;
+  --auth: #c48bff;
+  --auth-soft: #33224a;
+  --canvas: #18171e;
+  --grid: #2a2933;
+  --bubble-me: #1f3a2c;
+  --shadow: 0 1px 2px rgb(0 0 0 / 0.3), 0 6px 20px rgb(0 0 0 / 0.25);
+  color-scheme: dark;
+}
+
+@theme inline {
+  --font-sans: 'Plus Jakarta Sans', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-ink: var(--ink);
+  --color-muted: var(--muted);
+  --color-line: var(--line);
+  --color-accent: var(--accent);
+  --color-accent-soft: var(--accent-soft);
+  --color-accent-ink: var(--accent-ink);
+  --color-good: var(--good);
+  --color-good-soft: var(--good-soft);
+  --color-warn: var(--warn);
+  --color-warn-soft: var(--warn-soft);
+  --color-bad: var(--bad);
+  --color-bad-soft: var(--bad-soft);
+  --color-auth: var(--auth);
+  --color-auth-soft: var(--auth-soft);
+  --color-canvas: var(--canvas);
+  --color-bubble-me: var(--bubble-me);
+  --shadow-card: var(--shadow);
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* React Flow theming */
+.react-flow {
+  --xy-background-color: var(--canvas);
+  --xy-edge-stroke: var(--muted);
+  --xy-edge-stroke-selected: var(--accent);
+  --xy-handle-background-color: var(--surface);
+  --xy-handle-border-color: var(--muted);
+  --xy-controls-button-background-color: var(--surface);
+  --xy-controls-button-color: var(--ink);
+  --xy-controls-button-border-color: var(--line);
+  --xy-controls-button-background-color-hover: var(--surface-2);
+  --xy-minimap-background-color: var(--surface);
+  --xy-minimap-mask-background-color: color-mix(in oklab, var(--bg) 70%, transparent);
+  --xy-attribution-background-color: transparent;
+}
+
+/* Edges are drawn by the platform, not by hand: handles stay invisible. */
+.react-flow__handle {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.addr-node[data-focus='selected'] {
+  outline: 3px solid var(--accent);
+  outline-offset: 5px;
+}
+
+@keyframes pulse-ring {
+  0% {
+    box-shadow: 0 0 0 0 color-mix(in oklab, var(--ring, var(--accent)) 50%, transparent);
+  }
+  100% {
+    box-shadow: 0 0 0 16px transparent;
+  }
+}
+.pulse-ring {
+  animation: pulse-ring 1.4s ease-out infinite;
+}
+
+@property --halo-angle {
+  syntax: '<angle>';
+  initial-value: 0deg;
+  inherits: false;
+}
+@keyframes halo-run {
+  to {
+    --halo-angle: 360deg;
+  }
+}
+/* A light that runs around a working node's border; only the 2px ring is painted. */
+.work-halo {
+  position: absolute;
+  inset: -5px;
+  border-radius: 1.3rem;
+  padding: 2px;
+  background: conic-gradient(from var(--halo-angle), transparent 0 65%, color-mix(in oklab, var(--accent) 45%, transparent) 82%, var(--accent) 96%, transparent 100%);
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  animation: halo-run 2.2s linear infinite;
+  pointer-events: none;
+}
+
+/* The comet that runs along an edge when a task starts. */
+@keyframes comet {
+  from {
+    stroke-dashoffset: 0;
+  }
+  to {
+    stroke-dashoffset: -1000;
+  }
+}
+.edge-comet {
+  stroke-dasharray: 40 960;
+  animation: comet 0.9s ease-out 1 forwards;
+}
+
+@keyframes flash-good {
+  0% {
+    opacity: 1;
+    stroke-width: 7;
+  }
+  100% {
+    opacity: 0;
+    stroke-width: 2;
+  }
+}
+.edge-flash {
+  animation: flash-good 1.6s ease-out 1 forwards;
+}
+
+.scrollbar-thin {
+  scrollbar-width: thin;
+  scrollbar-color: var(--line) transparent;
+}
+
+.chat-wall {
+  background-color: var(--canvas);
+  background-image: radial-gradient(var(--grid) 1px, transparent 1px);
+  background-size: 18px 18px;
+}
+
+@layer components {
+  .input {
+    @apply w-full rounded-lg border border-line bg-surface px-2.5 py-1.5 text-sm text-ink outline-none placeholder:text-muted/70 focus:border-accent focus:ring-2 focus:ring-accent/20;
+  }
+  .card {
+    @apply rounded-2xl border border-line bg-surface shadow-card;
+  }
+}

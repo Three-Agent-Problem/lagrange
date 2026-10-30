@@ -1,0 +1,711 @@
+package platform
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"io/fs"
+	"mime"
+	"net/http"
+	"path"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/a2aproject/a2a-go/v2/a2a"
+	"github.com/a2aproject/a2a-go/v2/a2aext/structuredinput"
+	"github.com/a2aproject/a2a-go/v2/a2asrv"
+
+	"github.com/three-agent-problem/lagrange/activity"
+	"github.com/three-agent-problem/lagrange/credentials"
+	"github.com/three-agent-problem/lagrange/directory"
+	"github.com/three-agent-problem/lagrange/mailbox"
+	"github.com/three-agent-problem/lagrange/relay"
+)
+
+func (p *Platform) api(mux *http.ServeMux) {
+	mux.HandleFunc("POST /api/login", p.handleLogin)
+	mux.HandleFunc("POST /api/logout", p.handleLogout)
+	mux.Handle("GET /api/me", p.authed(p.handleMe))
+	mux.Handle("GET /api/users", p.authed(p.handleUsers))
+	mux.Handle("POST /api/users", p.authed(p.handleCreateUser))
+	mux.Handle("GET /api/addresses", p.authed(p.handleAddresses))
+	mux.Handle("POST /api/addresses", p.authed(p.handleCreateAddress))
+	mux.Handle("DELETE /api/addresses/{handle}", p.authed(p.handleDeleteAddress))
+	mux.Handle("GET /api/addresses/{handle}/tokens", p.authed(p.handleTokens))
+	mux.Handle("POST /api/addresses/{handle}/tokens", p.authed(p.handleMintToken))
+	mux.Handle("GET /api/inbox", p.authed(p.handleInbox))
+	mux.Handle("GET /api/tasks", p.authed(p.handleTasks))
+	mux.Handle("GET /api/tasks/{id}", p.authed(p.handleTask))
+	mux.Handle("POST /api/tasks/{id}/answer", p.authed(p.handleAnswer))
+	mux.Handle("POST /api/tasks/{id}/cancel", p.authed(p.handleCancel))
+	mux.Handle("POST /api/send", p.authed(p.handleSend))
+	mux.Handle("GET /api/graph", p.authed(p.handleGraph))
+	mux.Handle("GET /api/activity", p.authed(p.handleActivity))
+	mux.Handle("GET /api/events", p.authed(func(w http.ResponseWriter, r *http.Request, _ *directory.User) {
+		p.Activity.Stream(w, r)
+	}))
+}
+
+type apiHandler func(w http.ResponseWriter, r *http.Request, me *directory.User)
+
+// authed requires a session. State-changing requests must be JSON, which a cross-site
+// form can't send without a CORS preflight; with the SameSite=Lax cookie that keeps the
+// API safe from CSRF.
+func (p *Platform) authed(h apiHandler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		me := p.sessionUser(r)
+		if me == nil {
+			apiError(w, http.StatusUnauthorized, "log in first")
+			return
+		}
+		if r.Method != http.MethodGet && r.Method != http.MethodHead {
+			if mt, _, _ := mime.ParseMediaType(r.Header.Get("Content-Type")); mt != "application/json" {
+				apiError(w, http.StatusUnsupportedMediaType, "send JSON")
+				return
+			}
+		}
+		h(w, r, me)
+	})
+}
+
+func apiError(w http.ResponseWriter, status int, msg string) {
+	writeJSON(w, status, map[string]string{"error": msg})
+}
+
+func decode(r *http.Request, v any) error {
+	return json.NewDecoder(io.LimitReader(r.Body, 8<<20)).Decode(v)
+}
+
+func (p *Platform) handleLogin(w http.ResponseWriter, r *http.Request) {
+	var body struct{ Email, Password string }
+	if err := decode(r, &body); err != nil {
+		apiError(w, http.StatusBadRequest, "send {email, password}")
+		return
+	}
+	u, token, err := p.Directory.Login(r.Context(), strings.TrimSpace(body.Email), body.Password)
+	if errors.Is(err, directory.ErrBadCredentials) {
+		apiError(w, http.StatusUnauthorized, "wrong email or password")
+		return
+	}
+	if err != nil {
+		apiError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	http.SetCookie(w, &http.Cookie{
+		Name: SessionCookie, Value: token, Path: "/", HttpOnly: true, SameSite: http.SameSiteLaxMode,
+		Secure: strings.HasPrefix(p.cfg.PublicURL, "https://"), MaxAge: int(directory.SessionTTL / time.Second),
+	})
+	writeJSON(w, http.StatusOK, u)
+}
+
+func (p *Platform) handleLogout(w http.ResponseWriter, r *http.Request) {
+	if c, err := r.Cookie(SessionCookie); err == nil {
+		_ = p.Directory.Logout(r.Context(), c.Value)
+	}
+	http.SetCookie(w, &http.Cookie{Name: SessionCookie, Value: "", Path: "/", MaxAge: -1})
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (p *Platform) handleMe(w http.ResponseWriter, r *http.Request, me *directory.User) {
+	writeJSON(w, http.StatusOK, map[string]any{"user": me, "publicUrl": p.cfg.PublicURL})
+}
+
+func (p *Platform) handleUsers(w http.ResponseWriter, r *http.Request, me *directory.User) {
+	users, err := p.Directory.Users(r.Context())
+	if err != nil {
+		apiError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"users": users})
+}
+
+func (p *Platform) handleCreateUser(w http.ResponseWriter, r *http.Request, me *directory.User) {
+	if !me.Admin {
+		apiError(w, http.StatusForbidden, "only admins can invite people")
+		return
+	}
+	var body struct{ Email, Name, Handle, Password string }
+	if err := decode(r, &body); err != nil {
+		apiError(w, http.StatusBadRequest, "send {email, name, handle, password}")
+		return
+	}
+	u, err := p.Directory.CreateUser(r.Context(), strings.TrimSpace(body.Email), body.Name, body.Handle, body.Password, false)
+	if err != nil {
+		apiError(w, statusOf(err), err.Error())
+		return
+	}
+	p.addressChanged(r.Context(), u.Handle)
+	writeJSON(w, http.StatusCreated, u)
+}
+
+func statusOf(err error) int {
+	switch {
+	case errors.Is(err, directory.ErrTaken):
+		return http.StatusConflict
+	case errors.Is(err, directory.ErrNotFound):
+		return http.StatusNotFound
+	case errors.Is(err, directory.ErrInvalidHandle):
+		return http.StatusBadRequest
+	case errors.Is(err, a2a.ErrTaskNotFound):
+		return http.StatusNotFound
+	case errors.Is(err, a2a.ErrInvalidParams), errors.Is(err, a2a.ErrInvalidRequest):
+		return http.StatusBadRequest
+	}
+	if strings.HasPrefix(err.Error(), "directory: ") {
+		return http.StatusBadRequest
+	}
+	return http.StatusInternalServerError
+}
+
+func (p *Platform) addressChanged(ctx context.Context, handle string) {
+	_ = p.Activity.Add(ctx, &activity.Entry{Kind: activity.KindAddress, Recipient: handle})
+}
+
+// AddressView is an address as the web app sees it.
+type AddressView struct {
+	*directory.Address
+	Card     *a2a.AgentCard `json:"card"`
+	CardURL  string         `json:"cardUrl"`
+	Online   bool           `json:"online"`
+	Stats    mailbox.Stats  `json:"stats"`
+	Sessions []SessionView  `json:"sessions"`
+}
+
+// SessionView is a connected tunnel.
+type SessionView struct {
+	ID        string    `json:"id"`
+	Capacity  int       `json:"capacity"`
+	Agent     string    `json:"agent"`
+	Expose    bool      `json:"expose"`
+	Connected time.Time `json:"connected"`
+}
+
+func (p *Platform) addressView(a *directory.Address) *AddressView {
+	v := &AddressView{Address: a, Card: p.Card(a), CardURL: p.cfg.PublicURL + "/a/" + a.Handle + a2asrv.WellKnownAgentCardPath, Sessions: []SessionView{}}
+	v.Address.Card = nil // the platform card replaces the agent's own one in the view
+	v.Stats = p.Mailbox.Stats(a.Handle)
+	for _, s := range p.sessions.of(a.Handle) {
+		v.Sessions = append(v.Sessions, SessionView{ID: s.ID(), Capacity: s.Capacity(), Agent: s.Agent(), Expose: s.Expose(), Connected: s.Connected()})
+	}
+	v.Online = a.Kind == directory.KindHuman || a.Endpoint != "" || v.Stats.Sessions > 0
+	return v
+}
+
+func (p *Platform) addressViews(ctx context.Context) ([]*AddressView, error) {
+	addrs, err := p.Directory.Addresses(ctx)
+	if err != nil {
+		return nil, err
+	}
+	views := make([]*AddressView, len(addrs))
+	for i, a := range addrs {
+		views[i] = p.addressView(a)
+	}
+	return views, nil
+}
+
+func (p *Platform) handleAddresses(w http.ResponseWriter, r *http.Request, me *directory.User) {
+	views, err := p.addressViews(r.Context())
+	if err != nil {
+		apiError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"addresses": views})
+}
+
+// TunnelCommand is the command that connects an agent to this server.
+func (p *Platform) TunnelCommand(token string) string {
+	return fmt.Sprintf("lagrange tunnel --server %s --token %s --to http://localhost:9001", p.cfg.PublicURL, token)
+}
+
+func (p *Platform) handleCreateAddress(w http.ResponseWriter, r *http.Request, me *directory.User) {
+	var body struct{ Handle, DisplayName, Description, Endpoint string }
+	if err := decode(r, &body); err != nil {
+		apiError(w, http.StatusBadRequest, "send {handle, displayName, description, endpoint}")
+		return
+	}
+	a := &directory.Address{Handle: strings.ToLower(strings.TrimSpace(body.Handle)), OwnerID: me.ID,
+		DisplayName: body.DisplayName, Description: body.Description, Endpoint: strings.TrimSuffix(body.Endpoint, "/")}
+	if err := p.Directory.CreateAgent(r.Context(), a); err != nil {
+		apiError(w, statusOf(err), err.Error())
+		return
+	}
+	token, err := p.Directory.MintToken(r.Context(), a.Handle, "created with the address")
+	if err != nil {
+		apiError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	p.addressChanged(r.Context(), a.Handle)
+	writeJSON(w, http.StatusCreated, map[string]any{"address": p.addressView(a), "token": token, "command": p.TunnelCommand(token)})
+}
+
+// mayManage reports whether me may change an address.
+func mayManage(me *directory.User, a *directory.Address) bool {
+	return me.Admin || (a.OwnerID != 0 && a.OwnerID == me.ID)
+}
+
+func (p *Platform) managedAddress(w http.ResponseWriter, r *http.Request, me *directory.User) *directory.Address {
+	a, err := p.Directory.Address(r.Context(), r.PathValue("handle"))
+	if err != nil {
+		apiError(w, http.StatusNotFound, "no such address")
+		return nil
+	}
+	if a.Kind != directory.KindAgent || !mayManage(me, a) {
+		apiError(w, http.StatusForbidden, "you don't manage this agent")
+		return nil
+	}
+	return a
+}
+
+func (p *Platform) handleDeleteAddress(w http.ResponseWriter, r *http.Request, me *directory.User) {
+	a := p.managedAddress(w, r, me)
+	if a == nil {
+		return
+	}
+	if err := p.Directory.DeleteAddress(r.Context(), a.Handle); err != nil {
+		apiError(w, statusOf(err), err.Error())
+		return
+	}
+	for _, s := range p.sessions.of(a.Handle) {
+		_ = s.Close()
+	}
+	p.addressChanged(r.Context(), a.Handle)
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (p *Platform) handleTokens(w http.ResponseWriter, r *http.Request, me *directory.User) {
+	a := p.managedAddress(w, r, me)
+	if a == nil {
+		return
+	}
+	tokens, err := p.Directory.Tokens(r.Context(), a.Handle)
+	if err != nil {
+		apiError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"tokens": tokens})
+}
+
+func (p *Platform) handleMintToken(w http.ResponseWriter, r *http.Request, me *directory.User) {
+	a := p.managedAddress(w, r, me)
+	if a == nil {
+		return
+	}
+	var body struct{ Label string }
+	_ = decode(r, &body)
+	token, err := p.Directory.MintToken(r.Context(), a.Handle, body.Label)
+	if err != nil {
+		apiError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusCreated, map[string]any{"token": token, "command": p.TunnelCommand(token)})
+}
+
+// TaskView is a task as the web app sees it.
+type TaskView struct {
+	ID           a2a.TaskID             `json:"id"`
+	ContextID    string                 `json:"contextId"`
+	State        string                 `json:"state"`
+	Sender       string                 `json:"sender"`
+	Recipient    string                 `json:"recipient"`
+	ParentTaskID string                 `json:"parentTaskId,omitempty"`
+	Summary      string                 `json:"summary"`
+	Awaiting     string                 `json:"awaiting,omitempty"`
+	CreatedAt    time.Time              `json:"createdAt"`
+	UpdatedAt    time.Time              `json:"updatedAt"`
+	Task         *a2a.Task              `json:"task,omitempty"`
+	Input        *InputView             `json:"input,omitempty"`
+	Challenge    *credentials.Challenge `json:"challenge,omitempty"`
+}
+
+// InputView is a structured input request, for rendering a form.
+type InputView struct {
+	ID     string          `json:"id,omitempty"`
+	Schema json.RawMessage `json:"schema"`
+}
+
+const taskSelect = `SELECT t.id, t.context_id, t.state, t.tenant, coalesce(l.sender, t.owner), coalesce(l.parent_task_id, ''), t.created_at, t.updated_at, t.task
+	FROM tasks t LEFT JOIN task_links l ON l.task_id = t.id `
+
+func (p *Platform) queryTasks(ctx context.Context, full bool, where string, args ...any) ([]*TaskView, error) {
+	rows, err := p.DB.Pool.Query(ctx, taskSelect+where, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []*TaskView
+	for rows.Next() {
+		v := &TaskView{}
+		var raw []byte
+		if err := rows.Scan(&v.ID, &v.ContextID, &v.State, &v.Recipient, &v.Sender, &v.ParentTaskID, &v.CreatedAt, &v.UpdatedAt, &raw); err != nil {
+			return nil, err
+		}
+		var task a2a.Task
+		if err := json.Unmarshal(raw, &task); err != nil {
+			return nil, err
+		}
+		fillTaskView(v, &task)
+		if full {
+			v.Task = &task
+		}
+		out = append(out, v)
+	}
+	if out == nil {
+		out = []*TaskView{}
+	}
+	return out, rows.Err()
+}
+
+func fillTaskView(v *TaskView, task *a2a.Task) {
+	if len(task.History) > 0 {
+		v.Summary = relay.Text(task.History[0])
+	}
+	if msg := task.Status.Message; msg != nil {
+		if h, ok := msg.Metadata[relay.AwaitingKey].(string); ok {
+			v.Awaiting = h
+		}
+		if task.Status.State == a2a.TaskStateInputRequired {
+			if req, err := structuredinput.ParseRequest(msg); err == nil && req != nil && req.Schema != nil {
+				schema, _ := json.Marshal(req.Schema)
+				v.Input = &InputView{ID: req.ID, Schema: schema}
+			}
+		}
+		if ch, ok := credentials.ChallengeFromMessage(msg); ok {
+			v.Challenge = ch
+		}
+	}
+}
+
+// handleInbox lists the interrupted tasks that wait for me: the ones addressed to me,
+// and the ones I sent that need my answer.
+func (p *Platform) handleInbox(w http.ResponseWriter, r *http.Request, me *directory.User) {
+	tasks, err := p.queryTasks(r.Context(), true, `WHERE t.state IN ($2, $3) AND (t.tenant = $1 OR coalesce(l.sender, t.owner) = $1)
+		ORDER BY t.updated_at DESC LIMIT 200`, me.Handle, string(a2a.TaskStateInputRequired), string(a2a.TaskStateAuthRequired))
+	if err != nil {
+		apiError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"tasks": tasks})
+}
+
+// handleTasks lists recent tasks; with ?mine=1 only the ones I sent or received.
+func (p *Platform) handleTasks(w http.ResponseWriter, r *http.Request, me *directory.User) {
+	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+	if limit <= 0 || limit > 500 {
+		limit = 200
+	}
+	var tasks []*TaskView
+	var err error
+	if r.URL.Query().Get("mine") == "1" {
+		tasks, err = p.queryTasks(r.Context(), true, `WHERE t.tenant = $1 OR coalesce(l.sender, t.owner) = $1 ORDER BY t.updated_at DESC LIMIT $2`, me.Handle, limit)
+	} else {
+		tasks, err = p.queryTasks(r.Context(), false, `ORDER BY t.updated_at DESC LIMIT $1`, limit)
+	}
+	if err != nil {
+		apiError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"tasks": tasks})
+}
+
+func (p *Platform) handleTask(w http.ResponseWriter, r *http.Request, me *directory.User) {
+	id := r.PathValue("id")
+	tasks, err := p.queryTasks(r.Context(), true, `WHERE t.id = $1`, id)
+	if err != nil {
+		apiError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if len(tasks) == 0 {
+		apiError(w, http.StatusNotFound, "no such task")
+		return
+	}
+	entries, err := p.Activity.Task(r.Context(), id)
+	if err != nil {
+		apiError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	children, err := p.Links.Children(r.Context(), a2a.TaskID(id))
+	if err != nil {
+		apiError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if entries == nil {
+		entries = []*activity.Entry{}
+	}
+	if children == nil {
+		children = []*relay.Link{}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"task": tasks[0], "activity": entries, "children": children})
+}
+
+// callAs returns ctx with an a2asrv CallContext for user, as the platform's own calls
+// into the A2A handler use.
+func callAs(ctx context.Context, user string, attrs map[string]any) context.Context {
+	ctx, callCtx := a2asrv.NewCallContext(ctx, a2asrv.NewServiceParams(nil))
+	callCtx.User = a2asrv.NewAuthenticatedUser(user, attrs)
+	return ctx
+}
+
+type sendBody struct {
+	To        string         `json:"to"`
+	Text      string         `json:"text"`
+	Data      map[string]any `json:"data"`
+	TaskID    string         `json:"taskId"`
+	ContextID string         `json:"contextId"`
+}
+
+func (b *sendBody) parts() []*a2a.Part {
+	var parts []*a2a.Part
+	if t := strings.TrimSpace(b.Text); t != "" {
+		parts = append(parts, a2a.NewTextPart(t))
+	}
+	if b.Data != nil {
+		parts = append(parts, a2a.NewDataPart(b.Data))
+	}
+	return parts
+}
+
+// handleSend sends a message from me to an address, as a new task or into one of my tasks.
+func (p *Platform) handleSend(w http.ResponseWriter, r *http.Request, me *directory.User) {
+	var body sendBody
+	if err := decode(r, &body); err != nil {
+		apiError(w, http.StatusBadRequest, "send {to, text, data, taskId, contextId}")
+		return
+	}
+	body.To = strings.TrimPrefix(strings.TrimSpace(body.To), "@")
+	if _, err := p.Directory.Address(r.Context(), body.To); err != nil {
+		apiError(w, http.StatusNotFound, "no such address: @"+body.To)
+		return
+	}
+	parts := body.parts()
+	if len(parts) == 0 {
+		apiError(w, http.StatusBadRequest, "the message is empty")
+		return
+	}
+	msg := a2a.NewMessage(a2a.MessageRoleUser, parts...)
+	msg.TaskID = a2a.TaskID(body.TaskID)
+	msg.ContextID = body.ContextID
+	res, err := p.A2A.SendMessage(callAs(r.Context(), me.Handle, map[string]any{"kind": directory.KindHuman}), &a2a.SendMessageRequest{
+		Tenant: body.To, Message: msg, Config: &a2a.SendMessageConfig{ReturnImmediately: true},
+	})
+	if err != nil {
+		apiError(w, statusOf(err), err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"result": res})
+}
+
+// handleAnswer answers a task waiting for input: a person answering a task addressed to
+// them, or the sender answering the agent's question. With a structured input request,
+// data is the answer object.
+func (p *Platform) handleAnswer(w http.ResponseWriter, r *http.Request, me *directory.User) {
+	var body struct {
+		Text     string         `json:"text"`
+		Data     map[string]any `json:"data"`
+		Decision string         `json:"decision"`
+	}
+	if err := decode(r, &body); err != nil {
+		apiError(w, http.StatusBadRequest, "send {text, data, decision}")
+		return
+	}
+	stored, tenant, err := p.Tasks.Load(r.Context(), a2a.TaskID(r.PathValue("id")))
+	if err != nil {
+		apiError(w, statusOf(err), err.Error())
+		return
+	}
+	task := stored.Task
+	if task.Status.State != a2a.TaskStateInputRequired {
+		apiError(w, http.StatusConflict, "the task isn't waiting for an answer")
+		return
+	}
+	attrs := map[string]any{"kind": directory.KindHuman}
+	switch {
+	case tenant == me.Handle:
+		// A task for me: answer on the sender's behalf, as the person it waits for.
+		attrs[relay.AttrAnsweredBy] = me.Handle
+		if body.Decision == "reject" {
+			attrs[relay.AttrDecision] = "reject"
+		}
+	case stored.User == me.Handle, me.Admin:
+	default:
+		apiError(w, http.StatusForbidden, "this task doesn't wait for you")
+		return
+	}
+
+	var msg *a2a.Message
+	if req, err := structuredinput.ParseRequest(task.Status.Message); err == nil && req != nil && body.Data != nil {
+		var extra []*a2a.Part
+		if t := strings.TrimSpace(body.Text); t != "" {
+			extra = append(extra, a2a.NewTextPart(t))
+		}
+		if msg, err = structuredinput.NewResponse(task, req, body.Data, extra...); err != nil {
+			apiError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+	} else {
+		parts := (&sendBody{Text: body.Text, Data: body.Data}).parts()
+		if len(parts) == 0 {
+			apiError(w, http.StatusBadRequest, "the answer is empty")
+			return
+		}
+		msg = a2a.NewMessageForTask(a2a.MessageRoleUser, task, parts...)
+	}
+	msg.SetMeta(relay.AnsweredByKey, me.Handle)
+	if _, err := p.A2A.SendMessage(callAs(r.Context(), stored.User, attrs), &a2a.SendMessageRequest{
+		Tenant: tenant, Message: msg, Config: &a2a.SendMessageConfig{ReturnImmediately: true},
+	}); err != nil {
+		apiError(w, statusOf(err), err.Error())
+		return
+	}
+	w.WriteHeader(http.StatusAccepted)
+}
+
+func (p *Platform) handleCancel(w http.ResponseWriter, r *http.Request, me *directory.User) {
+	stored, tenant, err := p.Tasks.Load(r.Context(), a2a.TaskID(r.PathValue("id")))
+	if err != nil {
+		apiError(w, statusOf(err), err.Error())
+		return
+	}
+	if stored.User != me.Handle && tenant != me.Handle && !me.Admin {
+		apiError(w, http.StatusForbidden, "only the sender can cancel this task")
+		return
+	}
+	task, err := p.A2A.CancelTask(callAs(r.Context(), stored.User, nil), &a2a.CancelTaskRequest{Tenant: tenant, ID: stored.Task.ID})
+	if err != nil {
+		apiError(w, statusOf(err), err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"task": task})
+}
+
+// handleGraph is the snapshot the live graph starts from; /api/events continues it.
+func (p *Platform) handleGraph(w http.ResponseWriter, r *http.Request, me *directory.User) {
+	ctx := r.Context()
+	seq, err := p.Activity.Last(ctx)
+	if err != nil {
+		apiError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	views, err := p.addressViews(ctx)
+	if err != nil {
+		apiError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	tasks, err := p.queryTasks(ctx, false, `WHERE t.updated_at > now() - interval '24 hours' ORDER BY t.updated_at DESC LIMIT 300`)
+	if err != nil {
+		apiError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"seq": seq, "addresses": views, "tasks": tasks})
+}
+
+// handleActivity pages through the activity log (?since=seq&limit=n), for replay.
+func (p *Platform) handleActivity(w http.ResponseWriter, r *http.Request, me *directory.User) {
+	since, _ := strconv.ParseInt(r.URL.Query().Get("since"), 10, 64)
+	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+	if limit <= 0 || limit > 5000 {
+		limit = 2000
+	}
+	entries, err := p.Activity.Since(r.Context(), since, limit)
+	if err != nil {
+		apiError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if entries == nil {
+		entries = []*activity.Entry{}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"entries": entries})
+}
+
+// handleRegistrySearch answers like the registry's GET /agents, so agents built on the
+// registry client find each other on Lagrange. ?skill matches a skill ID or tag, ?q the
+// name, description and skills; offline agents are left out unless ?all=1.
+func (p *Platform) handleRegistrySearch(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	skill, text, all := strings.ToLower(q.Get("skill")), strings.ToLower(q.Get("q")), q.Get("all") == "1"
+	views, err := p.addressViews(r.Context())
+	if err != nil {
+		apiError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	type report struct {
+		Grade    string `json:"grade"`
+		Findings []any  `json:"findings"`
+	}
+	type entry struct {
+		URL        string         `json:"url"`
+		CardURL    string         `json:"cardUrl"`
+		Card       *a2a.AgentCard `json:"card"`
+		Report     report         `json:"report"`
+		Registered time.Time      `json:"registered"`
+		LastSeen   time.Time      `json:"lastSeen"`
+		Up         bool           `json:"up"`
+	}
+	agents := []entry{}
+	now := time.Now()
+	for _, v := range views {
+		if !v.Online && !all {
+			continue
+		}
+		if skill != "" && !hasSkill(v.Card, skill) {
+			continue
+		}
+		if text != "" && !strings.Contains(strings.ToLower(v.Card.Name+" "+v.Card.Description+" "+skillText(v.Card)), text) {
+			continue
+		}
+		agents = append(agents, entry{
+			URL: p.cfg.PublicURL + "/a/" + v.Handle, CardURL: v.CardURL, Card: v.Card,
+			Report: report{Grade: "conformant", Findings: []any{}}, Registered: v.CreatedAt, LastSeen: now, Up: v.Online,
+		})
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"agents": agents})
+}
+
+func hasSkill(card *a2a.AgentCard, skill string) bool {
+	for _, s := range card.Skills {
+		if strings.ToLower(s.ID) == skill {
+			return true
+		}
+		for _, t := range s.Tags {
+			if strings.ToLower(t) == skill {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func skillText(card *a2a.AgentCard) string {
+	var b strings.Builder
+	for _, s := range card.Skills {
+		b.WriteString(s.ID + " " + s.Name + " " + s.Description + " " + strings.Join(s.Tags, " ") + " ")
+	}
+	return b.String()
+}
+
+// webHandler serves the web app with a fallback to index.html for client-side routes.
+func webHandler(web fs.FS) http.Handler {
+	if web == nil {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+			fmt.Fprint(w, `<!doctype html><meta charset="utf-8"><title>Lagrange</title><body style="font-family:system-ui;padding:2rem"><h1>Lagrange</h1><p>The server is running. The web app wasn't built into this binary: run <code>npm run build</code> in <code>web/</code>, then rebuild.</p></body>`)
+		})
+	}
+	files := http.FileServerFS(web)
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		name := strings.TrimPrefix(path.Clean(r.URL.Path), "/")
+		if name == "" {
+			name = "index.html"
+		}
+		if _, err := fs.Stat(web, name); err != nil {
+			// A client-side route: let the app handle it.
+			r = r.Clone(r.Context())
+			r.URL.Path = "/"
+		} else if strings.HasPrefix(name, "assets/") {
+			w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+		}
+		files.ServeHTTP(w, r)
+	})
+}
