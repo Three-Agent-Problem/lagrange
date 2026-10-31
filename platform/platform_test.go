@@ -888,6 +888,74 @@ func TestAgentNotAnswering(t *testing.T) {
 	if got := relay.Text(task.Status.Message); !strings.Contains(got, "nothing answers at "+dead.URL) {
 		t.Fatalf("status = %q, want the unreachable target in it", got)
 	}
+	if f, _ := task.Status.Message.Metadata[relay.FailureKey].(map[string]any); f["kind"] != relay.FailureAgentDown || f["address"] != "down" {
+		t.Fatalf("failure metadata = %v", task.Status.Message.Metadata)
+	}
+}
+
+// An agent whose endpoint refuses connections fails the task too (a run that says why),
+// instead of an error the caller has to make sense of.
+func TestEndpointUnreachable(t *testing.T) {
+	e := newEnv(t, "")
+	dead := httptest.NewServer(http.NotFoundHandler())
+	dead.Close()
+	if err := e.p.Directory.CreateAgent(t.Context(), &directory.Address{Handle: "gone", Endpoint: dead.URL}); err != nil {
+		t.Fatal(err)
+	}
+	ada := e.login(t, adminEmail, adminPassword)
+	var sent struct {
+		Result struct {
+			ID     string
+			Status struct{ State string }
+		}
+	}
+	ada.do(http.MethodPost, "/api/send", map[string]string{"to": "gone", "text": "hi"}, http.StatusOK, &sent)
+	var got struct{ Task TaskViewJSON }
+	waitFor(t, "the task to fail", func() bool {
+		ada.do(http.MethodGet, "/api/tasks/"+sent.Result.ID, nil, http.StatusOK, &got)
+		return got.Task.State == string(a2a.TaskStateFailed)
+	})
+	f, _ := got.Task.Task.Status.Message.Metadata[relay.FailureKey].(map[string]any)
+	if f["kind"] != relay.FailureUnreachable {
+		t.Fatalf("failure = %v (%q)", f, relay.Text(got.Task.Task.Status.Message))
+	}
+}
+
+// TaskViewJSON is the part of a TaskView the failure tests read.
+type TaskViewJSON struct {
+	State string    `json:"state"`
+	Task  *a2a.Task `json:"task"`
+}
+
+// Archived runs leave the list and come back with ?archived=1.
+func TestArchiveRun(t *testing.T) {
+	e := newEnv(t, "")
+	tok := e.agent(t, "pinger")
+	e.connect(t, "pinger", tok, agentServer("pinger", replier()), 1)
+	if _, err := e.client(t, "pinger", "", "").SendMessage(t.Context(), text("ping")); err != nil {
+		t.Fatal(err)
+	}
+	ada := e.login(t, adminEmail, adminPassword)
+	var runs runList
+	ada.do(http.MethodGet, "/api/runs", nil, http.StatusOK, &runs)
+	if len(runs.Runs) != 1 {
+		t.Fatalf("runs = %+v", runs.Runs)
+	}
+	id := runs.Runs[0].ID
+	ada.do(http.MethodPost, "/api/runs/"+id+"/archive", struct{}{}, http.StatusNoContent, nil)
+	ada.do(http.MethodGet, "/api/runs", nil, http.StatusOK, &runs)
+	if len(runs.Runs) != 0 {
+		t.Fatalf("runs after archiving = %+v", runs.Runs)
+	}
+	ada.do(http.MethodGet, "/api/runs?archived=1", nil, http.StatusOK, &runs)
+	if len(runs.Runs) != 1 || runs.Runs[0].ID != id {
+		t.Fatalf("archived runs = %+v", runs.Runs)
+	}
+	ada.do(http.MethodDelete, "/api/runs/"+id+"/archive", struct{}{}, http.StatusNoContent, nil)
+	ada.do(http.MethodGet, "/api/runs", nil, http.StatusOK, &runs)
+	if len(runs.Runs) != 1 {
+		t.Fatalf("runs after unarchiving = %+v", runs.Runs)
+	}
 }
 
 type runList struct {

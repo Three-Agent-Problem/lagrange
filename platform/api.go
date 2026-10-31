@@ -46,6 +46,8 @@ func (p *Platform) api(mux *http.ServeMux) {
 	mux.Handle("GET /api/graph", p.authed(p.handleGraph))
 	mux.Handle("GET /api/runs", p.authed(p.handleRuns))
 	mux.Handle("GET /api/runs/{id}", p.authed(p.handleRun))
+	mux.Handle("POST /api/runs/{id}/archive", p.authed(p.handleArchiveRun))
+	mux.Handle("DELETE /api/runs/{id}/archive", p.authed(p.handleArchiveRun))
 	mux.Handle("GET /api/activity", p.authed(p.handleActivity))
 	mux.Handle("GET /api/settings/notifications", p.authed(p.handleNotificationSettings))
 	mux.Handle("PUT /api/settings/notifications", p.authed(p.handleSetNotificationSettings))

@@ -35,6 +35,8 @@ type Run struct {
 	Entries      int       `json:"entries"`
 	StartedAt    time.Time `json:"startedAt"`
 	UpdatedAt    time.Time `json:"updatedAt"`
+	// Archived runs are hidden from the list unless asked for (?archived=1).
+	Archived bool `json:"archived,omitempty"`
 }
 
 // RunDetail is everything recorded for a run.
@@ -155,7 +157,8 @@ func runStatus(r *Run) string {
 }
 
 // handleRuns lists runs, newest activity first: ?status=running|waiting|done|failed,
-// ?q (title and participants), ?participant=<handle>, ?limit.
+// ?q (title and participants), ?participant=<handle>, ?limit, ?archived=1 (only the
+// archived ones; otherwise they are left out).
 func (p *Platform) handleRuns(w http.ResponseWriter, r *http.Request, me *directory.User) {
 	ctx := r.Context()
 	q := r.URL.Query()
@@ -233,8 +236,18 @@ func (p *Platform) handleRuns(w http.ResponseWriter, r *http.Request, me *direct
 		runs = append(runs, messageRun(e))
 	}
 
+	archived, err := p.archivedRuns(ctx)
+	if err != nil {
+		apiError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
 	status, text, who := q.Get("status"), strings.ToLower(q.Get("q")), q.Get("participant")
+	wantArchived := q.Get("archived") == "1"
 	runs = slices.DeleteFunc(runs, func(run *Run) bool {
+		run.Archived = archived[run.ID]
+		if run.Archived != wantArchived {
+			return true
+		}
 		if status != "" && runStatus(run) != status {
 			return true
 		}
@@ -270,6 +283,52 @@ func (p *Platform) handleRun(w http.ResponseWriter, r *http.Request, me *directo
 
 var errNoRun = errors.New("no such run")
 
+func (p *Platform) markArchived(ctx context.Context, run *Run) {
+	_ = p.DB.Pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM archived_runs WHERE run_id = $1)`, run.ID).Scan(&run.Archived)
+}
+
+func (p *Platform) archivedRuns(ctx context.Context) (map[string]bool, error) {
+	rows, err := p.DB.Pool.Query(ctx, `SELECT run_id FROM archived_runs`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]bool{}
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		out[id] = true
+	}
+	return out, rows.Err()
+}
+
+// handleArchiveRun hides a run from the list (POST) or shows it again (DELETE). {id} is
+// any task in the run, or msg-<seq>.
+func (p *Platform) handleArchiveRun(w http.ResponseWriter, r *http.Request, me *directory.User) {
+	ctx := r.Context()
+	d, err := p.runDetail(ctx, r.PathValue("id"))
+	switch {
+	case errors.Is(err, errNoRun):
+		apiError(w, http.StatusNotFound, "no such run")
+		return
+	case err != nil:
+		apiError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if r.Method == http.MethodDelete {
+		_, err = p.DB.Pool.Exec(ctx, `DELETE FROM archived_runs WHERE run_id = $1`, d.Run.ID)
+	} else {
+		_, err = p.DB.Pool.Exec(ctx, `INSERT INTO archived_runs (run_id, archived_by) VALUES ($1, $2) ON CONFLICT DO NOTHING`, d.Run.ID, me.Handle)
+	}
+	if err != nil {
+		apiError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 func (p *Platform) runDetail(ctx context.Context, id string) (*RunDetail, error) {
 	if s, ok := strings.CutPrefix(id, "msg-"); ok {
 		seq, _ := strconv.ParseInt(s, 10, 64)
@@ -284,7 +343,9 @@ func (p *Platform) runDetail(ctx context.Context, id string) (*RunDetail, error)
 		if err != nil {
 			return nil, err
 		}
-		return &RunDetail{Run: messageRun(e), Tasks: []*TaskView{}, Entries: []*activity.Entry{e}, Exchanges: exchanges}, nil
+		run := messageRun(e)
+		p.markArchived(ctx, run)
+		return &RunDetail{Run: run, Tasks: []*TaskView{}, Entries: []*activity.Entry{e}, Exchanges: exchanges}, nil
 	}
 	root, err := p.rootOf(ctx, id)
 	if err != nil {
@@ -324,7 +385,9 @@ func (p *Platform) runDetail(ctx context.Context, id string) (*RunDetail, error)
 	if entries == nil {
 		entries = []*activity.Entry{}
 	}
-	return &RunDetail{Run: summarize(tasks[i], tasks, entries), Tasks: tasks, Entries: entries, Exchanges: exchanges}, nil
+	run := summarize(tasks[i], tasks, entries)
+	p.markArchived(ctx, run)
+	return &RunDetail{Run: run, Tasks: tasks, Entries: entries, Exchanges: exchanges}, nil
 }
 
 // exchangesOf returns the exchanges of the run's tasks and of its plain messages (those

@@ -146,6 +146,8 @@ export type Run = {
   entries: number
   startedAt: string
   updatedAt: string
+  /** Hidden from the runs list. */
+  archived?: boolean
 }
 
 export type Answer = { text?: string; data?: Record<string, unknown>; decision?: 'reject' }
@@ -213,11 +215,13 @@ export const api = {
     call<{ result: A2ATask | Message }>('POST', '/api/send', m),
   graph: () => call<Graph>('GET', '/api/graph'),
   activity: (since: number, limit = 2000) => call<{ entries: Entry[] }>('GET', `/api/activity?since=${since}&limit=${limit}`),
-  runs: (f: { status?: RunStatus; q?: string; participant?: string } = {}) => {
+  runs: (f: { status?: RunStatus; q?: string; participant?: string; archived?: '1' } = {}) => {
     const q = new URLSearchParams(Object.entries(f).filter(([, v]) => v) as [string, string][])
     return call<{ runs: Run[] }>('GET', `/api/runs${q.size ? `?${q}` : ''}`)
   },
   run: (id: string) => call<RunDetail>('GET', `/api/runs/${encodeURIComponent(id)}`),
+  /** Hide a run from the list (true) or show it again (false). */
+  archiveRun: (id: string, archived: boolean) => call<void>(archived ? 'POST' : 'DELETE', `/api/runs/${encodeURIComponent(id)}/archive`, {}),
 }
 
 /** The text parts of a message or artifact, joined. */

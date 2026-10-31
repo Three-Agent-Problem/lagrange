@@ -19,8 +19,10 @@ import (
 	"io"
 	"iter"
 	"log/slog"
+	"net"
 	"net/http"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/a2aproject/a2a-go/v2/a2a"
@@ -48,6 +50,10 @@ const (
 	AwaitingKey = "https://threeagents.dev/ext/awaiting/v1"
 	// AnsweredByKey in a message's metadata names the person who answered from the inbox.
 	AnsweredByKey = "https://threeagents.dev/ext/answered-by/v1"
+	// FailureKey in a FAILED status message's metadata says why Lagrange could not deliver
+	// the task: {"kind": Failure*, "address": handle, "detail": text}. Failures an agent
+	// reports itself don't carry it.
+	FailureKey = "https://threeagents.dev/ext/delivery-failure/v1"
 
 	// AttrAnsweredBy, in the a2asrv.User attributes of an inbox answer, names the person
 	// answering on the task owner's behalf. Only the platform's own API sets it.
@@ -116,19 +122,22 @@ func (r *Relay) Execute(ctx context.Context, ec *a2asrv.ExecutorContext) iter.Se
 			r.log().Warn("relay: forwarding failed", "address", addr.Handle, "task", ec.TaskID, "error", err)
 			// An agent that isn't answering behind its tunnel fails the task with the reason
 			// instead of retrying in the background while the caller waits.
-			text := "Lagrange could not reach " + addr.Name() + ": " + err.Error()
-			var unreachable *tunnel.UnreachableError
-			if errors.As(err, &unreachable) {
-				text = addr.Name() + "'s tunnel is connected, but " + unreachable.Reason
-				if !rec.started {
-					emit(a2a.NewSubmittedTask(ec, ec.Message))
-				}
+			kind, detail := classifyFailure(err)
+			text := "Lagrange could not reach " + addr.Name() + ": " + detail
+			if kind == FailureAgentDown {
+				text = addr.Name() + "'s tunnel is connected, but " + detail
+			}
+			// A connection problem still makes a (failed) task, so the run records why. An
+			// agent's error stays an error: it may be refusing a bad answer to its question.
+			if !rec.started && kind != FailureAgentError {
+				emit(a2a.NewSubmittedTask(ec, ec.Message))
 			}
 			if !rec.started {
 				yield(nil, err)
 				return
 			}
 			msg := a2a.NewMessageForTask(a2a.MessageRoleAgent, ec, a2a.NewTextPart(text))
+			msg.Metadata = map[string]any{FailureKey: map[string]any{"kind": kind, "address": addr.Handle, "detail": detail}}
 			emit(a2a.NewStatusUpdateEvent(ec, a2a.TaskStateFailed, msg))
 		}
 	}
@@ -621,4 +630,37 @@ func firstNonEmpty(a, b string) string {
 		return a
 	}
 	return b
+}
+
+// Delivery failure kinds, in FailureKey metadata.
+const (
+	// FailureAgentDown: the agent's tunnel is connected, but nothing answers behind it.
+	FailureAgentDown = "agent-down"
+	// FailureUnreachable: Lagrange could not connect to the agent's endpoint.
+	FailureUnreachable = "unreachable"
+	// FailureTimeout: the agent did not answer in time.
+	FailureTimeout = "timeout"
+	// FailureAgentError: the agent answered with an error, or with something that isn't A2A.
+	FailureAgentError = "agent-error"
+)
+
+// classifyFailure sorts a delivery error into a Failure kind and a short detail.
+func classifyFailure(err error) (kind, detail string) {
+	var down *tunnel.UnreachableError
+	if errors.As(err, &down) {
+		return FailureAgentDown, down.Reason
+	}
+	var netErr net.Error
+	msg := err.Error()
+	lower := strings.ToLower(msg)
+	switch {
+	case errors.Is(err, context.DeadlineExceeded) || (errors.As(err, &netErr) && netErr.Timeout()) ||
+		strings.Contains(lower, "deadline exceeded") || strings.Contains(lower, "timeout"):
+		return FailureTimeout, msg
+	case errors.Is(err, syscall.ECONNREFUSED) || strings.Contains(lower, "connection refused") ||
+		strings.Contains(lower, "no such host") || strings.Contains(lower, "network is unreachable") ||
+		strings.Contains(lower, "connection reset"):
+		return FailureUnreachable, msg
+	}
+	return FailureAgentError, msg
 }

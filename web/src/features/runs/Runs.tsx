@@ -1,4 +1,4 @@
-import { ArrowRight, ChevronLeft, ChevronRight, Eye, ListTree, Network, Pause, Play, Search, Webhook } from 'lucide-react'
+import { ArchiveRestore, ArrowRight, ChevronLeft, ChevronRight, Eye, EyeOff, ListTree, Network, Pause, Play, Search, Webhook } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router'
 import { api, type Exchange, type Run, type RunDetail, type RunStatus } from '@/lib/api'
@@ -10,15 +10,20 @@ import { Avatar } from '@/ui/Avatar'
 import { DataChips } from '@/ui/DataView'
 import { StateBadge } from '@/ui/StateBadge'
 import { ago, duration } from '@/ui/time'
+import { diagnose } from '@/features/runs/diagnose'
+import { FailureBanner } from '@/features/runs/FailureBanner'
 import { KIND_COLOR, Sequence } from '@/features/runs/Sequence'
 import { exchangeLine, exchangeParties, pretty, story, type Content, type Step } from '@/features/runs/story'
 
-const FILTERS: { id: RunStatus | ''; label: string }[] = [
+type Filter = RunStatus | '' | 'hidden'
+
+const FILTERS: { id: Filter; label: string }[] = [
   { id: '', label: 'All' },
   { id: 'running', label: 'Running' },
   { id: 'waiting', label: 'Waiting' },
   { id: 'done', label: 'Done' },
   { id: 'failed', label: 'Failed' },
+  { id: 'hidden', label: 'Hidden' },
 ]
 
 /** Refetch shortly after new activity arrives. */
@@ -53,7 +58,7 @@ function useNames() {
 export function Runs() {
   const { id } = useParams()
   const navigate = useNavigate()
-  const [status, setStatus] = useState<RunStatus | ''>('')
+  const [status, setStatus] = useState<Filter>('')
   const [q, setQ] = useState('')
   const [participant, setParticipant] = useState('')
   const [runs, setRuns] = useState<Run[]>()
@@ -62,7 +67,12 @@ export function Runs() {
 
   const load = useCallback(() => {
     void api
-      .runs({ status: status || undefined, q: q.trim() || undefined, participant: participant || undefined })
+      .runs({
+        status: status && status !== 'hidden' ? status : undefined,
+        archived: status === 'hidden' ? '1' : undefined,
+        q: q.trim() || undefined,
+        participant: participant || undefined,
+      })
       .then((r) => setRuns(r.runs))
       .catch(() => setRuns([]))
   }, [status, q, participant])
@@ -110,7 +120,7 @@ export function Runs() {
           </select>
         </div>
         <ul className="scrollbar-thin min-h-0 flex-1 overflow-y-auto">
-          {runs?.length === 0 && <li className="p-4 text-xs text-muted">No runs match. Send something from the Inbox.</li>}
+          {runs?.length === 0 && <li className="p-4 text-xs text-muted">{status === 'hidden' ? 'No hidden runs.' : 'No runs match. Send something from the Inbox.'}</li>}
           {runs?.map((r) => (
             <li key={r.id}>
               <Link to={`/runs/${r.id}`} className={cn('block border-b border-line/60 px-3 py-2.5 hover:bg-surface-2', r.id === id && 'bg-accent-soft hover:bg-accent-soft')}>
@@ -141,7 +151,7 @@ export function Runs() {
           ))}
         </ul>
       </aside>
-      <main className="flex min-w-0 flex-1 flex-col">{id ? <RunView key={id} id={id} kind={kind} name={name} /> : <Empty />}</main>
+      <main className="flex min-w-0 flex-1 flex-col">{id ? <RunView key={id} id={id} kind={kind} name={name} onArchived={load} /> : <Empty />}</main>
     </div>
   )
 }
@@ -167,7 +177,7 @@ function Empty() {
 
 type Speed = 1 | 4 | 'real'
 
-function RunView({ id, kind, name }: { id: string; kind: (h: string) => 'agent' | 'human' | undefined; name: (h: string) => string }) {
+function RunView({ id, kind, name, onArchived }: { id: string; kind: (h: string) => 'agent' | 'human' | undefined; name: (h: string) => string; onArchived: () => void }) {
   const [data, setData] = useState<RunDetail>()
   const [error, setError] = useState('')
   const [params, setParams] = useSearchParams()
@@ -188,6 +198,13 @@ function RunView({ id, kind, name }: { id: string; kind: (h: string) => 'agent' 
   useOnActivity(load, 600)
 
   const s = useMemo(() => (data ? story(data, name) : undefined), [data, name])
+  const diag = useMemo(() => (data ? diagnose(data, name) : undefined), [data, name])
+  const archive = async (archived: boolean) => {
+    await api.archiveRun(id, archived)
+    onArchived()
+    if (archived) navigate('/runs')
+    else load()
+  }
   const steps = useMemo(() => s?.steps ?? [], [s])
 
   // The step in focus lives in the URL (?step=N), so a step can be linked to.
@@ -287,6 +304,13 @@ function RunView({ id, kind, name }: { id: string; kind: (h: string) => 'agent' 
           >
             <Network size={13} /> Watch on graph
           </button>
+          <button
+            className="flex items-center gap-1.5 rounded-lg border border-line px-2.5 py-1.5 text-xs font-bold text-muted hover:text-ink"
+            title={run.archived ? 'Show this run in the list again' : 'Hide this run from the list (a test, say); the Hidden filter still finds it'}
+            onClick={() => void archive(!run.archived)}
+          >
+            {run.archived ? <ArchiveRestore size={13} /> : <EyeOff size={13} />} {run.archived ? 'Unhide' : 'Hide'}
+          </button>
         </div>
         <div className="mt-3 flex flex-wrap items-center gap-2">
           <div className="flex rounded-lg bg-surface-2 p-0.5 text-xs font-bold">
@@ -339,6 +363,7 @@ function RunView({ id, kind, name }: { id: string; kind: (h: string) => 'agent' 
           )}
         </div>
       </header>
+      {diag && <FailureBanner key={run.id} d={data} diag={diag} name={name} onTraffic={() => setTab('traffic')} />}
 
       {tab === 'story' ? (
         <div className="flex min-h-0 flex-1">
