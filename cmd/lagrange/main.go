@@ -115,6 +115,7 @@ func serve(ctx context.Context, args []string) error {
 		AdminHandle:      os.Getenv("LAGRANGE_ADMIN_HANDLE"),
 		WorkerID:         os.Getenv("LAGRANGE_WORKER_ID"),
 		AllowPrivatePush: os.Getenv("LAGRANGE_ALLOW_PRIVATE_PUSH") == "1",
+		Dev:              os.Getenv("LAGRANGE_DEV") == "1",
 		Web:              web.FS(),
 		Email:            email,
 		Logger:           logger,
@@ -131,7 +132,7 @@ func serve(ctx context.Context, args []string) error {
 		defer cancel()
 		_ = srv.Shutdown(sctx)
 	}()
-	logger.Info("lagrange listening", "addr", *addr, "public", *publicURL, "web", web.FS() != nil, "email", email != nil)
+	logger.Info("lagrange listening", "addr", *addr, "public", *publicURL, "web", web.FS() != nil, "email", email != nil, "dev", os.Getenv("LAGRANGE_DEV") == "1")
 	if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		return err
 	}

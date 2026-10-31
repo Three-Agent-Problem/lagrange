@@ -59,6 +59,8 @@ type Config struct {
 	// AllowPrivatePush lets push notifications go to private and loopback addresses.
 	// Only for local development and tests.
 	AllowPrivatePush bool
+	// Dev enables development-only endpoints, such as POST /api/dev/reset.
+	Dev bool
 	// Queue tunes the work queue; zero values are the defaults.
 	Queue pg.WorkQueueConfig
 	// EventPoll is how often subscribers poll for task events (default 100ms).

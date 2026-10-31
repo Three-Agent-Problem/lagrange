@@ -1,6 +1,7 @@
-import { Bot, Inbox, ListTree, LogOut, Moon, Network, Sun, Users } from 'lucide-react'
+import { Bot, Inbox, ListTree, LogOut, Moon, Network, RotateCcw, Sun, Users } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { NavLink, Outlet } from 'react-router'
+import { api } from '@/lib/api'
 import { cn } from '@/lib/cn'
 import { useLive } from '@/store/live'
 import { waitingFor } from '@/store/model'
@@ -40,7 +41,7 @@ function useTheme() {
 }
 
 export function Shell() {
-  const { user, logout } = useSession()
+  const { user, logout, dev } = useSession()
   const start = useLive((s) => s.start)
   const model = useLive((s) => s.model)
   const [theme, toggle] = useTheme()
@@ -71,6 +72,7 @@ export function Shell() {
           {item('/directory', <Users size={19} />, 'Directory')}
         </div>
         <div className="mt-auto flex flex-col items-center gap-2">
+          {dev && user?.admin && <DevReset />}
           <button className="rounded-lg p-2 text-muted hover:bg-surface-2 hover:text-ink" onClick={toggle} title="Theme">
             {theme === 'dark' ? <Sun size={17} /> : <Moon size={17} />}
           </button>
@@ -88,5 +90,39 @@ export function Shell() {
         <Outlet />
       </main>
     </div>
+  )
+}
+
+/** Dev servers only: wipe agents and traffic to start over. Click twice. */
+function DevReset() {
+  const [armed, setArmed] = useState(false)
+  const [busy, setBusy] = useState(false)
+  useEffect(() => {
+    if (!armed) return
+    const t = setTimeout(() => setArmed(false), 3000)
+    return () => clearTimeout(t)
+  }, [armed])
+  const click = async () => {
+    if (!armed) return setArmed(true)
+    setBusy(true)
+    try {
+      await api.devReset()
+      location.assign('/')
+    } catch (e) {
+      setBusy(false)
+      setArmed(false)
+      console.error('dev reset', e)
+    }
+  }
+  return (
+    <button
+      className={cn('flex flex-col items-center gap-0.5 rounded-lg px-1.5 py-1 text-[9.5px] font-bold', armed ? 'bg-bad text-white' : 'text-bad/80 hover:bg-bad-soft hover:text-bad')}
+      onClick={() => void click()}
+      disabled={busy}
+      title="Dev only: delete every agent, run and message; people and logins stay"
+    >
+      <RotateCcw size={15} className={busy ? 'animate-spin' : ''} />
+      {busy ? 'Reset…' : armed ? 'Sure?' : 'Reset'}
+    </button>
   )
 }

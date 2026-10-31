@@ -54,6 +54,7 @@ LAGRANGE_ADMIN_EMAIL=you@example.com LAGRANGE_ADMIN_PASSWORD=... LAGRANGE_ADMIN_
 | `LAGRANGE_ADMIN_EMAIL`, `_PASSWORD`, `_NAME`, `_HANDLE` | | The first account, created if it doesn't exist. |
 | `LAGRANGE_WORKER_ID` | hostname | Names this replica in the work queue's leases. |
 | `LAGRANGE_ALLOW_PRIVATE_PUSH` | off | `1` lets A2A push notifications go to private networks (local demos only). |
+| `LAGRANGE_DEV` | off | `1` adds a **Reset** button to the sidebar for admins: it deletes every agent and all traffic (people and logins stay). Development only. |
 | `LAGRANGE_SMTP_URL` | off | `smtp://user:pass@host:587` (STARTTLS) or `smtps://...:465`. Turns on email notifications: when a task waits on someone, they get an email with a one-time link that answers it without logging in. |
 | `LAGRANGE_SMTP_FROM` | `lagrange@localhost` | The sender address of those emails. |
 

@@ -50,6 +50,7 @@ func (p *Platform) api(mux *http.ServeMux) {
 	mux.Handle("GET /api/settings/notifications", p.authed(p.handleNotificationSettings))
 	mux.Handle("PUT /api/settings/notifications", p.authed(p.handleSetNotificationSettings))
 	mux.Handle("POST /api/settings/notifications/test", p.authed(p.handleTestNotification))
+	mux.Handle("POST /api/dev/reset", p.authed(p.handleDevReset))
 	// Decision links carry their own credential, so they need no session.
 	mux.HandleFunc("GET /api/decisions/{token}", p.handleDecision)
 	mux.HandleFunc("POST /api/decisions/{token}", p.handleDecisionAnswer)
@@ -119,7 +120,7 @@ func (p *Platform) handleLogout(w http.ResponseWriter, r *http.Request) {
 }
 
 func (p *Platform) handleMe(w http.ResponseWriter, r *http.Request, me *directory.User) {
-	writeJSON(w, http.StatusOK, map[string]any{"user": me, "publicUrl": p.cfg.PublicURL})
+	writeJSON(w, http.StatusOK, map[string]any{"user": me, "publicUrl": p.cfg.PublicURL, "dev": p.cfg.Dev})
 }
 
 func (p *Platform) handleUsers(w http.ResponseWriter, r *http.Request, me *directory.User) {
