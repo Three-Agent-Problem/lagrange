@@ -7,6 +7,7 @@ import { useLive } from '@/store/live'
 import { normState, OUTSIDE } from '@/store/model'
 import { addressMap, useSession } from '@/store/session'
 import { Avatar } from '@/ui/Avatar'
+import { DataChips } from '@/ui/DataView'
 import { StateBadge } from '@/ui/StateBadge'
 import { ago, duration } from '@/ui/time'
 import { KIND_COLOR, Sequence } from '@/features/runs/Sequence'
@@ -461,15 +462,7 @@ function Body({ c }: { c?: Content }) {
   return (
     <div className="mt-1 space-y-1">
       {c.text && <p className="text-[12.5px] whitespace-pre-wrap text-ink/90">{c.text}</p>}
-      {c.fields && (
-        <div className="flex flex-wrap gap-1">
-          {c.fields.map(([k, v]) => (
-            <span key={k} className="max-w-full truncate rounded-md bg-accent-soft px-1.5 py-0.5 font-mono text-[10.5px]" title={`${k}: ${v}`}>
-              <span className="text-muted">{k}</span> <b className="text-ink">{v}</b>
-            </span>
-          ))}
-        </div>
-      )}
+      {c.fields && <DataChips fields={c.fields} />}
     </div>
   )
 }

@@ -3,10 +3,12 @@ import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } fro
 import { Link, useNavigate, useParams } from 'react-router'
 import { api, textOf, type Address, type TaskView } from '@/lib/api'
 import { cn } from '@/lib/cn'
+import { humanData, summarize } from '@/lib/data'
 import { useLive } from '@/store/live'
 import { isWaiting, normState, OUTSIDE } from '@/store/model'
 import { addressMap, useSession } from '@/store/session'
 import { Bubble } from '@/ui/Bubble'
+import { DataView } from '@/ui/DataView'
 import { AnswerForm } from '@/ui/AnswerForm'
 import { Avatar } from '@/ui/Avatar'
 import { StateBadge } from '@/ui/StateBadge'
@@ -72,7 +74,7 @@ export function Inbox() {
           {tasks && convs.length === 0 && <li className="p-4 text-sm text-muted">No conversations yet. Start one with the + button.</li>}
           {convs.map((c) => {
             const last = c.latest
-            const preview = textOf(last.task?.status.message?.parts) || last.summary
+            const preview = textOf(last.task?.status.message?.parts) || summarize(last.summary)
             return (
               <li key={c.handle}>
                 <Link to={`/inbox/${c.handle}`} className={cn('flex gap-3 px-4 py-3 hover:bg-surface-2', c.handle === active && 'bg-accent-soft/60')}>
@@ -217,7 +219,10 @@ function TaskThread({ t, me, kind, onChange }: { t: TaskView; me: string; kind: 
       {(t.task?.artifacts ?? []).map((a) => (
         <div key={a.artifactId} className={cn('max-w-[85%] rounded-2xl border border-line bg-surface px-3 py-2 text-xs shadow-card', !mine && 'self-end')}>
           <b className="text-accent">{a.name || 'Result'}</b>
-          <p className="mt-0.5 whitespace-pre-wrap">{textOf(a.parts)}</p>
+          {textOf(a.parts) && <p className="mt-0.5 whitespace-pre-wrap">{textOf(a.parts)}</p>}
+          {humanData(a.parts).map((d, i) => (
+            <DataView key={i} data={d} className="mt-1" />
+          ))}
         </div>
       ))}
       <div className={cn('flex items-center gap-2', mine ? 'justify-end' : 'justify-start')}>

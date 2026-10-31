@@ -4,6 +4,7 @@ import { AnimatePresence, motion } from 'motion/react'
 import { useEffect, useState } from 'react'
 import { api, type Address, type JSONSchema, type Stats } from '@/lib/api'
 import { cn } from '@/lib/cn'
+import { summarize } from '@/lib/data'
 import { OUTSIDE, shorten, type Activity, type TaskNode } from '@/store/model'
 import { AnswerForm } from '@/ui/AnswerForm'
 import { Avatar } from '@/ui/Avatar'
@@ -137,7 +138,7 @@ export function AddressNode({ data, selected }: NodeProps<AddressFlowNode>) {
 function Callout({ task, handle, me, readOnly, onOpen }: { task: TaskNode; handle: string; me?: string; readOnly?: boolean; onOpen?: (id: string) => void }) {
   const auth = task.state === 'auth_required'
   const forMe = !readOnly && ((task.awaiting === handle && handle === me) || (task.awaiting !== handle && task.sender === me))
-  const text = task.awaiting === handle ? task.summary : task.last || task.summary
+  const text = summarize(task.awaiting === handle ? task.summary : task.last || task.summary)
   const schema = useInputSchema(forMe && !auth ? task.id : undefined, task.updatedAt)
   return (
     <motion.div

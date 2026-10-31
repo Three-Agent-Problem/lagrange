@@ -1,6 +1,7 @@
 import { ArrowRight, Hourglass, Package, PlugZap, Send, UserPlus } from 'lucide-react'
 import { Link } from 'react-router'
 import type { Entry } from '@/lib/api'
+import { summarize } from '@/lib/data'
 import { useView } from '@/store/live'
 import { OUTSIDE } from '@/store/model'
 import { addressMap, useSession } from '@/store/session'
@@ -54,15 +55,15 @@ function Row({ e, kind }: { e: Entry; kind: (h: string) => 'agent' | 'human' | u
       </span>
     ) : e.kind === 'message' ? (
       <span className="truncate text-muted">
-        {e.summary && <>asked: {e.summary} · </>}
-        {e.data?.reply ? `replied: ${String(e.data.reply)}` : 'replied'}
+        {e.summary && <>asked: {summarize(e.summary)} · </>}
+        {e.data?.reply ? `replied: ${summarize(String(e.data.reply))}` : 'replied'}
       </span>
     ) : e.kind === 'input' ? (
-      <span className="truncate text-muted">answered: {e.summary}</span>
+      <span className="truncate text-muted">answered: {summarize(e.summary)}</span>
     ) : (
       <span className="flex min-w-0 items-center gap-1.5">
         {e.state && <StateBadge state={e.state} />}
-        <span className="truncate text-muted">{e.summary}</span>
+        <span className="truncate text-muted">{summarize(e.summary)}</span>
       </span>
     )
   const inner = (

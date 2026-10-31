@@ -1,6 +1,7 @@
 import { ExternalLink, MessageSquare, X } from 'lucide-react'
 import { Link } from 'react-router'
 import type { Address } from '@/lib/api'
+import { summarize } from '@/lib/data'
 import { useView } from '@/store/live'
 import { OUTSIDE } from '@/store/model'
 import { Avatar } from '@/ui/Avatar'
@@ -65,7 +66,7 @@ export function Inspector({ handle, address, onClose }: { handle: string; addres
                 <span className="truncate font-semibold">{t.sender === handle ? `→ @${t.recipient}` : `← ${t.sender === OUTSIDE ? 'outside' : '@' + t.sender}`}</span>
                 <StateBadge state={t.state} className="ml-auto" />
               </div>
-              <p className="mt-0.5 truncate text-xs text-muted">{t.summary}</p>
+              <p className="mt-0.5 truncate text-xs text-muted">{summarize(t.summary)}</p>
               <p className="font-mono text-[10px] text-muted">{ago(t.updatedAt, model.now || Date.now())}</p>
             </Link>
           </li>
