@@ -6,6 +6,8 @@ type SessionState = {
   publicUrl: string
   /** The server runs with LAGRANGE_DEV=1. */
   dev: boolean
+  /** The dev server has a seed command (LAGRANGE_DEV_SEED). */
+  devSeed: boolean
   /** undefined until the first /api/me answer. */
   ready: boolean
   addresses: Address[]
@@ -18,12 +20,13 @@ type SessionState = {
 export const useSession = create<SessionState>((set, get) => ({
   publicUrl: location.origin,
   dev: false,
+  devSeed: false,
   ready: false,
   addresses: [],
   load: async () => {
     try {
       const me = await api.me()
-      set({ user: me.user, publicUrl: me.publicUrl, dev: !!me.dev, ready: true })
+      set({ user: me.user, publicUrl: me.publicUrl, dev: !!me.dev, devSeed: !!me.devSeed, ready: true })
       await get().refreshAddresses()
     } catch (e) {
       if (e instanceof ApiError && e.status === 401) set({ user: undefined, ready: true })

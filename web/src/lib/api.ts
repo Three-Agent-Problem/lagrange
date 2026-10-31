@@ -186,9 +186,9 @@ async function call<T>(method: string, path: string, body?: unknown): Promise<T>
 }
 
 export const api = {
-  me: () => call<{ user: User; publicUrl: string; dev?: boolean }>('GET', '/api/me'),
-  /** Dev servers only (LAGRANGE_DEV=1): delete every agent and all traffic, keep people. */
-  devReset: () => call<void>('POST', '/api/dev/reset', {}),
+  me: () => call<{ user: User; publicUrl: string; dev?: boolean; devSeed?: boolean }>('GET', '/api/me'),
+  /** Dev servers only (LAGRANGE_DEV=1): delete every agent and all traffic, keep people; with seed, run the seed again. */
+  devReset: (seed: boolean) => call<void>('POST', '/api/dev/reset', { seed }),
   login: (email: string, password: string) => call<User>('POST', '/api/login', { email, password }),
   logout: () => call<void>('POST', '/api/logout', {}),
   users: () => call<{ users: User[] }>('GET', '/api/users'),

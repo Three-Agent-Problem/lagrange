@@ -93,36 +93,52 @@ export function Shell() {
   )
 }
 
-/** Dev servers only: wipe agents and traffic to start over. Click twice. */
+/** Dev servers only: reset to the demo seed, or empty the server to try onboarding. */
 function DevReset() {
-  const [armed, setArmed] = useState(false)
+  const devSeed = useSession((s) => s.devSeed)
+  const [open, setOpen] = useState(false)
   const [busy, setBusy] = useState(false)
-  useEffect(() => {
-    if (!armed) return
-    const t = setTimeout(() => setArmed(false), 3000)
-    return () => clearTimeout(t)
-  }, [armed])
-  const click = async () => {
-    if (!armed) return setArmed(true)
+  const [error, setError] = useState('')
+  const reset = async (seed: boolean) => {
     setBusy(true)
+    setError('')
     try {
-      await api.devReset()
+      await api.devReset(seed)
       location.assign('/')
     } catch (e) {
       setBusy(false)
-      setArmed(false)
-      console.error('dev reset', e)
+      setError((e as Error).message)
     }
   }
-  return (
-    <button
-      className={cn('flex flex-col items-center gap-0.5 rounded-lg px-1.5 py-1 text-[9.5px] font-bold', armed ? 'bg-bad text-white' : 'text-bad/80 hover:bg-bad-soft hover:text-bad')}
-      onClick={() => void click()}
-      disabled={busy}
-      title="Dev only: delete every agent, run and message; people and logins stay"
-    >
-      <RotateCcw size={15} className={busy ? 'animate-spin' : ''} />
-      {busy ? 'Reset…' : armed ? 'Sure?' : 'Reset'}
+  const choice = (label: string, hint: string, seed: boolean, danger?: boolean) => (
+    <button className={cn('block w-full rounded-lg px-3 py-2 text-left hover:bg-surface-2 disabled:opacity-50', danger && 'text-bad')} disabled={busy} onClick={() => void reset(seed)}>
+      <span className="block text-[13px] font-bold">{label}</span>
+      <span className="block text-[11px] font-normal text-muted">{hint}</span>
     </button>
+  )
+  return (
+    <div className="relative">
+      <button
+        className={cn('flex flex-col items-center gap-0.5 rounded-lg px-1.5 py-1 text-[9.5px] font-bold', open ? 'bg-bad-soft text-bad' : 'text-bad/80 hover:bg-bad-soft hover:text-bad')}
+        onClick={() => setOpen(!open)}
+        title="Dev only: reset the server"
+      >
+        <RotateCcw size={15} className={busy ? 'animate-spin' : ''} />
+        Reset
+      </button>
+      {open && (
+        <>
+          <button className="fixed inset-0 z-40 cursor-default" aria-label="Close" onClick={() => setOpen(false)} />
+          <div className="card absolute bottom-0 left-full z-50 ml-3 w-72 p-1.5 shadow-lg">
+            <p className="px-3 pt-1.5 pb-1 text-[10px] font-bold tracking-wide text-muted">DEV SERVER · PEOPLE AND LOGINS STAY</p>
+            {devSeed
+              ? choice('Reset to demo seed', 'Wipe, reconnect the demo agents, replay the scripted orders', true)
+              : <p className="px-3 py-2 text-[11px] text-muted">No seed command: start the server with LAGRANGE_DEV_SEED to get “Reset to demo seed”.</p>}
+            {choice('Empty', 'Delete every agent, run and message, to try onboarding', false, true)}
+            {error && <p className="px-3 py-1.5 text-[11px] font-semibold text-bad">{error}</p>}
+          </div>
+        </>
+      )}
+    </div>
   )
 }

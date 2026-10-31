@@ -120,7 +120,7 @@ func (p *Platform) handleLogout(w http.ResponseWriter, r *http.Request) {
 }
 
 func (p *Platform) handleMe(w http.ResponseWriter, r *http.Request, me *directory.User) {
-	writeJSON(w, http.StatusOK, map[string]any{"user": me, "publicUrl": p.cfg.PublicURL, "dev": p.cfg.Dev})
+	writeJSON(w, http.StatusOK, map[string]any{"user": me, "publicUrl": p.cfg.PublicURL, "dev": p.cfg.Dev, "devSeed": p.seed != nil})
 }
 
 func (p *Platform) handleUsers(w http.ResponseWriter, r *http.Request, me *directory.User) {

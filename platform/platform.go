@@ -61,6 +61,11 @@ type Config struct {
 	AllowPrivatePush bool
 	// Dev enables development-only endpoints, such as POST /api/dev/reset.
 	Dev bool
+	// DevSeed is a command (split on spaces, no shell) that seeds a dev server: it runs
+	// from start to Close, and "reset to seed" restarts it with LAGRANGE_SEED=1 after
+	// emptying the server. It gets LAGRANGE_SERVER, LAGRANGE_ADMIN_EMAIL and
+	// LAGRANGE_ADMIN_PASSWORD. Needs Dev.
+	DevSeed string
 	// Queue tunes the work queue; zero values are the defaults.
 	Queue pg.WorkQueueConfig
 	// EventPoll is how often subscribers poll for task events (default 100ms).
@@ -87,6 +92,7 @@ type Platform struct {
 	Tunnels *tunnel.Server
 
 	sessions *sessionRegistry
+	seed     *seeder
 	queue    *pg.WorkQueue
 	handler  http.Handler
 	stop     context.CancelFunc
@@ -174,6 +180,14 @@ func New(ctx context.Context, cfg Config) (*Platform, error) {
 		}
 	}
 	p.handler = p.routes()
+	if p.seed = newSeeder(cfg, log); p.seed != nil {
+		// A server with no agents yet gets the scripted requests too.
+		var empty bool
+		_ = db.Pool.QueryRow(ctx, `SELECT NOT EXISTS (SELECT 1 FROM addresses WHERE kind = 'agent')`).Scan(&empty)
+		if err := p.seed.start(empty); err != nil {
+			log.Warn("dev seed command", "err", err)
+		}
+	}
 	return p, nil
 }
 
@@ -187,6 +201,7 @@ func (p *Platform) PublicURL() string { return p.cfg.PublicURL }
 // (or the next start), and closes the database.
 func (p *Platform) Close() {
 	p.closed.Do(func() {
+		p.seed.stop()
 		p.queue.Close(5 * time.Second)
 		p.Notify.Wait()
 		p.stop()

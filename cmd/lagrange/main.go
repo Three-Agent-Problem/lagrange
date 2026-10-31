@@ -116,6 +116,7 @@ func serve(ctx context.Context, args []string) error {
 		WorkerID:         os.Getenv("LAGRANGE_WORKER_ID"),
 		AllowPrivatePush: os.Getenv("LAGRANGE_ALLOW_PRIVATE_PUSH") == "1",
 		Dev:              os.Getenv("LAGRANGE_DEV") == "1",
+		DevSeed:          os.Getenv("LAGRANGE_DEV_SEED"),
 		Web:              web.FS(),
 		Email:            email,
 		Logger:           logger,
