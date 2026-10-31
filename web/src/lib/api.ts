@@ -74,6 +74,8 @@ export type TaskView = {
   recipient: string
   parentTaskId?: string
   summary: string
+  /** What the latest status (or the final result) says, in words. */
+  status?: string
   awaiting?: string
   createdAt: string
   updatedAt: string
@@ -81,6 +83,9 @@ export type TaskView = {
   input?: { id?: string; schema: JSONSchema }
   challenge?: { id: string; integration: string; url: string; expiresAt: string }
 }
+
+/** What two addresses said to each other (a and b sorted). */
+export type Conversation = { a: string; b: string; tasks: number; messages: number; waiting: number; lastAt: string; last: string; lastFrom: string }
 
 /** The team's rules for tasks waiting on someone. Delays are seconds; null is off. */
 export type WaitPolicy = { remindAfter: number | null; escalateAfter: number | null; escalateTo: string; cancelAfter: number | null }
@@ -156,6 +161,8 @@ export type Run = {
   /** The root task's ID, or msg-<seq> for a plain message exchange. */
   id: string
   title: string
+  /** How it ended, in words; empty while it runs. */
+  outcome?: string
   starter: string
   recipient: string
   /** The root task's state, or "message". */
@@ -237,12 +244,14 @@ export const api = {
     call<{ result: A2ATask | Message }>('POST', '/api/send', m),
   graph: () => call<Graph>('GET', '/api/graph'),
   activity: (since: number, limit = 2000) => call<{ entries: Entry[] }>('GET', `/api/activity?since=${since}&limit=${limit}`),
-  runs: (f: { status?: RunStatus; q?: string; participant?: string; waitingOn?: string; archived?: '1' } = {}) => {
+  runs: (f: { status?: RunStatus; q?: string; participant?: string; waitingOn?: string; archived?: '1'; limit?: string } = {}) => {
     const q = new URLSearchParams(Object.entries(f).filter(([, v]) => v) as [string, string][])
     return call<{ runs: Run[] }>('GET', `/api/runs${q.size ? `?${q}` : ''}`)
   },
   run: (id: string) => call<RunDetail>('GET', `/api/runs/${encodeURIComponent(id)}`),
   /** Hide a run from the list (true) or show it again (false). */
+  conversations: () => call<{ conversations: Conversation[] }>('GET', '/api/conversations'),
+  conversation: (a: string, b: string) => call<{ tasks: TaskView[]; messages: Entry[] }>('GET', `/api/conversations/${encodeURIComponent(a)}/${encodeURIComponent(b)}`),
   waiting: () => call<{ waiting: Wait[]; policy: WaitPolicy }>('GET', '/api/waiting'),
   remind: (taskId: string) => call<void>('POST', `/api/waiting/${encodeURIComponent(taskId)}/remind`, {}),
   setWaitPolicy: (p: WaitPolicy) => call<{ policy: WaitPolicy }>('PUT', '/api/settings/wait-policy', p),

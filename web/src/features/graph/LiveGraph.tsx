@@ -190,7 +190,7 @@ export function LiveGraph() {
         )}
         {replay && <ReplayBar />}
       </div>
-      <aside className="hidden w-[340px] shrink-0 border-l border-line bg-surface lg:flex lg:flex-col">
+      <aside className="hidden w-[380px] shrink-0 border-l border-line bg-surface lg:flex lg:flex-col">
         {selected ? <Inspector handle={selected} address={byHandle[selected]} onClose={() => setSelected(undefined)} /> : <Feed />}
       </aside>
     </div>

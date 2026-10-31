@@ -988,6 +988,8 @@ func TestArchiveRun(t *testing.T) {
 type runList struct {
 	Runs []struct {
 		ID           string   `json:"id"`
+		Title        string   `json:"title"`
+		Outcome      string   `json:"outcome"`
 		State        string   `json:"state"`
 		Participants []string `json:"participants"`
 		Waiting      []string `json:"waiting"`

@@ -7,6 +7,7 @@ import { Agents } from '@/features/agents/Agents'
 import { Decision } from '@/features/decision/Decision'
 import { Directory } from '@/features/directory/Directory'
 import { LiveGraph } from '@/features/graph/LiveGraph'
+import { Between } from '@/features/inbox/Between'
 import { Inbox } from '@/features/inbox/Inbox'
 import { Runs } from '@/features/runs/Runs'
 import { Settings } from '@/features/settings/Settings'
@@ -38,6 +39,8 @@ function LoggedIn() {
           <Route index element={<ReactFlowProvider><LiveGraph /></ReactFlowProvider>} />
           <Route path="inbox" element={<Inbox />} />
           <Route path="inbox/:handle" element={<Inbox />} />
+            <Route path="inbox/between" element={<Between />} />
+            <Route path="inbox/between/:a/:b" element={<Between />} />
           <Route path="runs" element={<Runs />} />
           <Route path="runs/:id" element={<Runs />} />
           <Route path="tasks/:id" element={<TaskRedirect />} />

@@ -13,6 +13,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/a2aproject/a2a-go/v2/a2a"
 	"github.com/a2aproject/a2a-go/v2/a2aext/structuredinput"
@@ -53,6 +54,8 @@ func (p *Platform) api(mux *http.ServeMux) {
 	mux.Handle("PUT /api/settings/notifications", p.authed(p.handleSetNotificationSettings))
 	mux.Handle("POST /api/settings/notifications/test", p.authed(p.handleTestNotification))
 	mux.Handle("POST /api/dev/reset", p.authed(p.handleDevReset))
+	mux.Handle("GET /api/conversations", p.authed(p.handleConversations))
+	mux.Handle("GET /api/conversations/{a}/{b}", p.authed(p.handleConversation))
 	mux.Handle("GET /api/waiting", p.authed(p.handleWaiting))
 	mux.Handle("POST /api/waiting/{id}/remind", p.authed(p.handleRemind))
 	mux.Handle("GET /api/settings/wait-policy", p.authed(p.handleWaitPolicy))
@@ -321,19 +324,21 @@ func (p *Platform) handleMintToken(w http.ResponseWriter, r *http.Request, me *d
 
 // TaskView is a task as the web app sees it.
 type TaskView struct {
-	ID           a2a.TaskID             `json:"id"`
-	ContextID    string                 `json:"contextId"`
-	State        string                 `json:"state"`
-	Sender       string                 `json:"sender"`
-	Recipient    string                 `json:"recipient"`
-	ParentTaskID string                 `json:"parentTaskId,omitempty"`
-	Summary      string                 `json:"summary"`
-	Awaiting     string                 `json:"awaiting,omitempty"`
-	CreatedAt    time.Time              `json:"createdAt"`
-	UpdatedAt    time.Time              `json:"updatedAt"`
-	Task         *a2a.Task              `json:"task,omitempty"`
-	Input        *InputView             `json:"input,omitempty"`
-	Challenge    *credentials.Challenge `json:"challenge,omitempty"`
+	ID           a2a.TaskID `json:"id"`
+	ContextID    string     `json:"contextId"`
+	State        string     `json:"state"`
+	Sender       string     `json:"sender"`
+	Recipient    string     `json:"recipient"`
+	ParentTaskID string     `json:"parentTaskId,omitempty"`
+	Summary      string     `json:"summary"`
+	// Status is what the task's latest status says, in words (empty while it waits on a person).
+	Status    string                 `json:"status,omitempty"`
+	Awaiting  string                 `json:"awaiting,omitempty"`
+	CreatedAt time.Time              `json:"createdAt"`
+	UpdatedAt time.Time              `json:"updatedAt"`
+	Task      *a2a.Task              `json:"task,omitempty"`
+	Input     *InputView             `json:"input,omitempty"`
+	Challenge *credentials.Challenge `json:"challenge,omitempty"`
 }
 
 // InputView is a structured input request, for rendering a form.
@@ -381,6 +386,8 @@ func fillTaskView(v *TaskView, task *a2a.Task) {
 	if msg := task.Status.Message; msg != nil {
 		if h, ok := msg.Metadata[relay.AwaitingKey].(string); ok {
 			v.Awaiting = h
+		} else {
+			v.Status = clip(relay.Describe(msg), 600)
 		}
 		if task.Status.State == a2a.TaskStateInputRequired {
 			if req, err := structuredinput.ParseRequest(msg); err == nil && req != nil && req.Schema != nil {
@@ -391,6 +398,10 @@ func fillTaskView(v *TaskView, task *a2a.Task) {
 		if ch, ok := credentials.ChallengeFromMessage(msg); ok {
 			v.Challenge = ch
 		}
+	}
+	if n := len(task.Artifacts); v.Status == "" && n > 0 && task.Status.State.Terminal() {
+		// A task that ends with a result and no closing words: the result says it.
+		v.Status = clip(relay.Describe(&a2a.Message{Parts: task.Artifacts[n-1].Parts}), 600)
 	}
 }
 
@@ -839,4 +850,15 @@ func webHandler(web fs.FS) http.Handler {
 		}
 		files.ServeHTTP(w, r)
 	})
+}
+
+// clip shortens s to at most n bytes, on a rune boundary, with an ellipsis.
+func clip(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	for n > 0 && !utf8.RuneStart(s[n]) {
+		n--
+	}
+	return s[:n] + "…"
 }

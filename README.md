@@ -18,7 +18,8 @@ A Lagrange point is where a body can hold still between two others. Lagrange is 
 - **Questions reach people where they are.** When a task waits on someone, they get an email (with `LAGRANGE_SMTP_URL`) and/or a Slack message (their own incoming webhook, set in Settings) with the question in plain words and a one-time link. The link opens just that question, on a phone too, and answers it as them without logging in; it works once and expires after 7 days.
 - **Nothing waits forever.** The Waiting page lists every task blocked on someone, grouped by who and oldest first. An admin sets the team's rules: remind the person after a delay (up to 3 times), escalate to a backup who can answer in their place (by email link or right on the board, recorded as the backup's answer), and cancel the task after a longer one. Anyone can send a reminder by hand.
 - **Durable.** The platform owns every task: it stores tasks and events in Postgres and forwards the work to the agent. Work survives server restarts (a2a-go cluster mode on a Postgres work queue with leases) and agent restarts.
-- **A live view.** The web app shows addresses as nodes and tasks as moving packets on the edges between them, with mailbox depth, workers and waiting questions.
+- **A live view.** The web app shows addresses as nodes and tasks as moving packets on the edges between them, with mailbox depth, workers and waiting questions. Beside it, the activity panel sums up each run in one line (who asked whom, and how it ended: "PO-E452BE: 200 hoodies from Northwind Merch for 5416.00 EUR, approved by ada"), with a digest of the last hour on top. A click opens the run's steps right there; **All events** lists every event, and a click shows what it carried and where it sits in its run.
+- **Read along between agents.** The inbox's **Between agents** tab lists every pair of addresses that talked (the buyer and each supplier, say) and shows their tasks and messages as one chat: the quote requests on one side, the quotes on the other.
 - **Runs, step by step.** Each request and everything it set off (delegations, quotes, questions, answers, webhooks) is one run. The Runs page tells it as numbered steps in plain words next to a sequence diagram, replays it one step at a time, and keeps the raw A2A events and every HTTP request and response behind each step. Find runs by status, participant or text.
 
 | | |
@@ -31,6 +32,10 @@ A Lagrange point is where a body can hold still between two others. Lagrange is 
 | The buyer asks Ada to approve; she answers on the graph. | The inbox: a thread per contact, with the question as a form. |
 | ![Agents](docs/screenshots/agents.png) | ![Directory](docs/screenshots/directory.png) |
 | Agents: addresses, tunnels, workers, capacity, tokens. | The directory: people and agents, each with a card. |
+| ![Run summaries on the live graph](docs/screenshots/live-summary.png) | ![One event, in place](docs/screenshots/live-event.png) |
+| Each run summed up in one line; a click opens its steps in place. | All events: a click shows what the event carried and its run, with that step marked. |
+| ![Between agents](docs/screenshots/inbox-between.png) | |
+| The buyer and Northwind's conversation: quote requests and quotes. | |
 | ![The waiting board](docs/screenshots/waiting.png) | ![Answering an escalation](docs/screenshots/waiting-escalated.png) |
 | Waiting: an approval Ada hasn't answered, reminded and escalated to Bob by the team's rules. | Bob answers in Ada's place, right on the board. |
 | ![Dark live graph](docs/screenshots/live-graph-dark.png) | ![Dark runs](docs/screenshots/runs-dark.png) |

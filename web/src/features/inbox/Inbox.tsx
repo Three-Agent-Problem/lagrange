@@ -10,6 +10,7 @@ import { addressMap, useSession } from '@/store/session'
 import { Bubble } from '@/ui/Bubble'
 import { DataView } from '@/ui/DataView'
 import { AnswerForm } from '@/ui/AnswerForm'
+import { InboxTabs } from '@/features/inbox/Between'
 import { Avatar } from '@/ui/Avatar'
 import { StateBadge } from '@/ui/StateBadge'
 import { ago, clock } from '@/ui/time'
@@ -63,11 +64,14 @@ export function Inbox() {
   return (
     <div className="flex h-full min-h-0">
       <aside className="flex w-[320px] shrink-0 flex-col border-r border-line bg-surface">
-        <div className="flex items-center justify-between border-b border-line px-4 py-3">
-          <h1 className="text-base font-bold">Inbox</h1>
-          <button className="rounded-lg p-1.5 text-accent hover:bg-accent-soft" onClick={() => setPicking(true)} title="New conversation">
-            <MessageSquarePlus size={18} />
-          </button>
+        <div className="flex flex-col gap-2.5 border-b border-line px-4 py-3">
+          <div className="flex items-center justify-between">
+            <h1 className="text-base font-bold">Inbox</h1>
+            <button className="rounded-lg p-1.5 text-accent hover:bg-accent-soft" onClick={() => setPicking(true)} title="New conversation">
+              <MessageSquarePlus size={18} />
+            </button>
+          </div>
+          <InboxTabs />
         </div>
         {picking && <Picker addresses={addresses.filter((a) => a.handle !== me)} onPick={(h) => (setPicking(false), navigate(`/inbox/${h}`))} onClose={() => setPicking(false)} />}
         <ul className="scrollbar-thin min-h-0 flex-1 overflow-y-auto">

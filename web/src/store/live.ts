@@ -2,7 +2,7 @@
 // one run on the graph. Views read `view()`, which is the replayed model while a replay is open.
 import { create } from 'zustand'
 import { api, type Entry } from '@/lib/api'
-import { emptyModel, fold, fromSnapshot, reduce, type Model } from '@/store/model'
+import { emptyModel, FEED_MAX, fold, fromSnapshot, reduce, type Model } from '@/store/model'
 
 export type Speed = 1 | 4 | 16
 
@@ -45,6 +45,12 @@ export const useLive = create<LiveState>((set, get) => ({
       .then((g) => {
         if (closed) return
         set({ model: fromSnapshot(g) })
+        // The snapshot has state but no history: fetch the recent events for the feed.
+        void api.activity(Math.max(0, g.seq - FEED_MAX), FEED_MAX).then(({ entries }) => {
+          if (closed) return
+          const known = entries.filter((e) => e.seq <= g.seq && e.kind !== 'presence')
+          set((s) => ({ model: { ...s.model, feed: [...known, ...s.model.feed.filter((e) => e.seq > g.seq)].slice(-FEED_MAX) } }))
+        })
         source = new EventSource(`/api/events?since=${g.seq}`)
         source.onopen = () => set({ status: 'live' })
         source.onerror = () => set({ status: 'reconnecting' })

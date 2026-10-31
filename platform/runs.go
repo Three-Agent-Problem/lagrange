@@ -23,8 +23,11 @@ import (
 // Run summarizes a run for the runs list.
 type Run struct {
 	// ID is the root task's ID, or msg-<seq> for a plain message exchange.
-	ID        string `json:"id"`
-	Title     string `json:"title"`
+	ID    string `json:"id"`
+	Title string `json:"title"`
+	// Outcome is how the run ended, in words: the root task's last answer, or a plain
+	// message's reply. Empty while it runs.
+	Outcome   string `json:"outcome,omitempty"`
 	Starter   string `json:"starter"`
 	Recipient string `json:"recipient"`
 	// State is the root task's state ("TASK_STATE_COMPLETED"), or "message".
@@ -98,6 +101,9 @@ func summarize(root *TaskView, tasks []*TaskView, entries []*activity.Entry) *Ru
 		State: root.State, Tasks: len(tasks), StartedAt: root.CreatedAt, UpdatedAt: root.UpdatedAt,
 		Waiting: []string{}, Participants: []string{},
 	}
+	if s := a2a.TaskState(root.State); s.Terminal() {
+		r.Outcome = root.Status
+	}
 	add := func(list *[]string, h string) {
 		if h != "" && !slices.Contains(*list, h) {
 			*list = append(*list, h)
@@ -140,6 +146,7 @@ func messageRun(e *activity.Entry) *Run {
 		ID: "msg-" + strconv.FormatInt(e.Seq, 10), Title: e.Summary, Starter: e.Sender, Recipient: e.Recipient,
 		State: "message", Entries: 1, StartedAt: e.At, UpdatedAt: e.At, Waiting: []string{}, Participants: []string{},
 	}
+	r.Outcome, _ = e.Data["reply"].(string)
 	for _, h := range []string{e.Sender, e.Recipient} {
 		if h != "" {
 			r.Participants = append(r.Participants, h)

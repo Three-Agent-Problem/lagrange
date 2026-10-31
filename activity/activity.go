@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"slices"
 	"strconv"
 	"time"
 
@@ -107,6 +108,15 @@ func (l *Log) Get(ctx context.Context, seq int64) (*Entry, error) {
 // Messages returns the newest plain message exchanges that weren't made from a task.
 func (l *Log) Messages(ctx context.Context, limit int) ([]*Entry, error) {
 	return l.query(ctx, `WHERE kind = 'message' AND parent_task_id = '' ORDER BY seq DESC LIMIT $1`, limit)
+}
+
+// Between returns the newest plain message exchanges between two addresses, either way
+// round, oldest first.
+func (l *Log) Between(ctx context.Context, a, b string, limit int) ([]*Entry, error) {
+	entries, err := l.query(ctx, `WHERE kind = 'message' AND ((sender = $1 AND recipient = $2) OR (sender = $2 AND recipient = $1))
+		ORDER BY seq DESC LIMIT $3`, a, b, limit)
+	slices.Reverse(entries)
+	return entries, err
 }
 
 // Last returns the latest seq, or 0.
