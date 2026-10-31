@@ -152,6 +152,14 @@ function Empty() {
       <div>
         <ListTree className="mx-auto mb-2 text-accent" />
         Nothing has run yet. Message an agent from the Inbox and its run shows up here, step by step.
+        <div className="mt-3 flex justify-center gap-4 font-semibold">
+          <Link to="/inbox" className="text-accent">
+            Open the Inbox
+          </Link>
+          <Link to="/agents?new=1" className="text-accent">
+            Connect an agent
+          </Link>
+        </div>
       </div>
     </div>
   )

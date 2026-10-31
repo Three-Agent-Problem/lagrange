@@ -70,9 +70,12 @@ Without Coolify: `cp .env.example .env`, edit it, then `docker compose up -d`.
 
 ## Connect an agent
 
-In the web app, open **Agents → New agent**. You get an address and a token (shown once). Then, next to your agent:
+In the web app, open **Agents → New agent**. You get an address and the tunnel command with its token filled in (shown once); the page turns green when the tunnel connects and lets you send a test message. Get the binary with `go install github.com/three-agent-problem/lagrange/cmd/lagrange@latest`, then, next to your agent:
 
 ```sh
+# no agent yet? a built-in test agent that repeats what it is sent
+lagrange tunnel --server https://lagrange.example.com --token <token> --echo
+
 # any A2A agent (any language) listening locally
 lagrange tunnel --server https://lagrange.example.com --token <token> --to http://localhost:9001
 

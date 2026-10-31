@@ -3,6 +3,7 @@
 //	lagrange serve                       run the server (configured by environment variables)
 //	lagrange tunnel --to URL             connect a local A2A agent to a server
 //	lagrange tunnel --acp "CMD"          connect a coding agent (Agent Client Protocol) to a server
+//	lagrange tunnel --echo               connect a built-in test agent that repeats what it is sent
 //	lagrange token --address HANDLE      mint an address token from the server's database
 //	lagrange migrate                     apply database migrations and exit
 //	lagrange healthcheck                 exit 0 if the local server is healthy (for Docker)
@@ -144,7 +145,8 @@ func runTunnel(ctx context.Context, args []string) error {
 	to := fs.String("to", "", "Base URL of the local A2A agent, e.g. http://localhost:9001.")
 	acp := fs.String("acp", "", `Coding agent command speaking ACP, e.g. "claude-agent-acp" or "opencode acp".`)
 	dir := fs.String("dir", ".", "Working directory of the --acp agent.")
-	name := fs.String("name", "", "Agent name on its card (--acp only).")
+	echo := fs.Bool("echo", false, "Serve a built-in test agent that answers with what it was sent.")
+	name := fs.String("name", "", "Agent name on its card (--acp and --echo).")
 	capacity := fs.Int("capacity", tunnel.DefaultCapacity, "Tasks this copy runs at once.")
 	expose := fs.Bool("expose", false, "Let the server forward raw HTTP for /t/<handle>/... (webhooks) to the agent.")
 	_ = fs.Parse(args)
@@ -154,9 +156,17 @@ func runTunnel(ctx context.Context, args []string) error {
 	}
 	logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
 	var handler http.Handler
+	modes := 0
+	for _, on := range []bool{*to != "", *acp != "", *echo} {
+		if on {
+			modes++
+		}
+	}
 	switch {
-	case *to != "" && *acp != "":
-		return errors.New("tunnel: use --to or --acp, not both")
+	case modes > 1:
+		return errors.New("tunnel: use one of --to, --acp and --echo")
+	case *echo:
+		handler = echoHandler(*name)
 	case *to != "":
 		target, err := url.Parse(*to)
 		if err != nil || target.Host == "" {
@@ -174,7 +184,7 @@ func runTunnel(ctx context.Context, args []string) error {
 		defer closeFn()
 		handler = h
 	default:
-		return errors.New("tunnel: --to or --acp is required")
+		return errors.New("tunnel: --to, --acp or --echo is required (--echo connects a built-in test agent)")
 	}
 	logger.Info("connecting", "server", *server, "capacity", *capacity)
 	err := tunnel.Run(ctx, tunnel.ClientConfig{

@@ -1,5 +1,7 @@
 import { KeyRound, Plus, Trash2 } from 'lucide-react'
 import { useEffect, useState, type FormEvent } from 'react'
+import { useSearchParams } from 'react-router'
+import { Connect } from '@/features/agents/Connect'
 import { api, type Address, type Token } from '@/lib/api'
 import { cn } from '@/lib/cn'
 import { useView } from '@/store/live'
@@ -12,8 +14,9 @@ import { ago } from '@/ui/time'
 export function Agents() {
   const { addresses, user, publicUrl, refreshAddresses } = useSession()
   const model = useView()
-  const [creating, setCreating] = useState(false)
-  const [secret, setSecret] = useState<{ handle: string; token: string; command: string }>()
+  const [params, setParams] = useSearchParams()
+  const [creating, setCreating] = useState(params.has('new'))
+  const [secret, setSecret] = useState<{ handle: string; token: string }>()
   const mine = addresses.filter((a) => a.kind === 'agent' && (user?.admin || a.ownerId === user?.id))
 
   useEffect(() => {
@@ -28,7 +31,7 @@ export function Agents() {
             <h1 className="text-xl font-extrabold">Agents</h1>
             <p className="mt-1 text-sm text-muted">Every agent gets an address. Run it anywhere; the tunnel connects it here, no deploy or open port needed.</p>
           </div>
-          <Button icon={<Plus size={14} />} onClick={() => setCreating(true)}>
+          <Button icon={<Plus size={14} />} onClick={() => (setCreating(true), setSecret(undefined))}>
             New agent
           </Button>
         </header>
@@ -37,16 +40,17 @@ export function Agents() {
           <Create
             onDone={(r) => {
               setCreating(false)
+              setParams({}, { replace: true })
               setSecret(r)
               void refreshAddresses()
             }}
-            onCancel={() => setCreating(false)}
+            onCancel={() => (setCreating(false), setParams({}, { replace: true }))}
           />
         )}
-        {secret && <Secret {...secret} onClose={() => setSecret(undefined)} />}
+        {secret && <Connect key={secret.token} {...secret} onClose={() => setSecret(undefined)} />}
 
         <div className="grid gap-4">
-          {mine.length === 0 && !creating && <p className="card p-6 text-sm text-muted">No agents yet. Create one to get its address and tunnel command.</p>}
+          {mine.length === 0 && !creating && !secret && <FirstAgent onStart={() => setCreating(true)} />}
           {mine.map((a) => (
             <AgentCard key={a.handle} a={a} live={model.presence[a.handle]} publicUrl={publicUrl} onSecret={setSecret} onDeleted={() => void refreshAddresses()} />
           ))}
@@ -54,6 +58,8 @@ export function Agents() {
 
         <section className="card space-y-3 p-5 text-sm">
           <h2 className="font-bold">Connecting agents</h2>
+          <p className="text-muted">Try an address before writing any code: a built-in test agent that repeats what it is sent.</p>
+          <CodeLine text={`lagrange tunnel --server ${publicUrl} --token <token> --echo`} />
           <p className="text-muted">Any A2A agent, in any language, behind a tunnel:</p>
           <CodeLine text={`lagrange tunnel --server ${publicUrl} --token <token> --to http://localhost:9001`} />
           <p className="text-muted">A coding agent that speaks ACP (Claude Code, Gemini CLI, opencode). Its "may I run this?" prompts land in your inbox:</p>
@@ -68,14 +74,35 @@ export function Agents() {
   )
 }
 
-function Create({ onDone, onCancel }: { onDone: (r: { handle: string; token: string; command: string }) => void; onCancel: () => void }) {
+/** The empty state: what connecting the first agent takes. */
+function FirstAgent({ onStart }: { onStart: () => void }) {
+  const steps = ['Pick a handle: your agent’s address', 'Run one command next to it (or try the built-in echo agent)', 'Send it a test message']
+  return (
+    <div className="card p-6">
+      <h2 className="text-base font-bold">Connect your first agent in two minutes</h2>
+      <ol className="mt-3 space-y-1.5 text-sm text-muted">
+        {steps.map((s, i) => (
+          <li key={s} className="flex items-center gap-2">
+            <span className="flex h-5 w-5 items-center justify-center rounded-full bg-accent-soft text-[11px] font-bold text-accent">{i + 1}</span>
+            {s}
+          </li>
+        ))}
+      </ol>
+      <Button className="mt-4" icon={<Plus size={14} />} onClick={onStart}>
+        New agent
+      </Button>
+    </div>
+  )
+}
+
+function Create({ onDone, onCancel }: { onDone: (r: { handle: string; token: string }) => void; onCancel: () => void }) {
   const [form, setForm] = useState({ handle: '', displayName: '', description: '', endpoint: '' })
   const [error, setError] = useState('')
   const submit = async (e: FormEvent) => {
     e.preventDefault()
     try {
       const r = await api.createAddress(form)
-      onDone({ handle: r.address.handle, token: r.token, command: r.command })
+      onDone({ handle: r.address.handle, token: r.token })
     } catch (err) {
       setError((err as Error).message)
     }
@@ -88,7 +115,7 @@ function Create({ onDone, onCancel }: { onDone: (r: { handle: string; token: str
   )
   return (
     <form onSubmit={submit} className="card grid gap-3 p-5 sm:grid-cols-2">
-      {field('handle', 'Handle', 'acme-buyer')}
+      {field('handle', 'Handle', 'my-agent')}
       {field('displayName', 'Name', 'Acme Buyer')}
       <div className="sm:col-span-2">{field('description', 'Description', 'Buys merch from approved suppliers')}</div>
       <div className="sm:col-span-2">{field('endpoint', 'Public endpoint (optional, skips the tunnel)', 'https://agent.example.com')}</div>
@@ -103,23 +130,7 @@ function Create({ onDone, onCancel }: { onDone: (r: { handle: string; token: str
   )
 }
 
-function Secret({ handle, token, command, onClose }: { handle: string; token: string; command: string; onClose: () => void }) {
-  return (
-    <div className="card space-y-2 border-good/40 bg-good-soft/40 p-5 text-sm">
-      <h2 className="font-bold">
-        Token for @{handle} <span className="font-normal text-muted">(shown once)</span>
-      </h2>
-      <CodeLine text={token} />
-      <p className="text-muted">Run this next to your agent:</p>
-      <CodeLine text={command} />
-      <button className="text-xs font-semibold text-muted" onClick={onClose}>
-        Done
-      </button>
-    </div>
-  )
-}
-
-function AgentCard({ a, live, publicUrl, onSecret, onDeleted }: { a: Address; live?: Address['stats']; publicUrl: string; onSecret: (s: { handle: string; token: string; command: string }) => void; onDeleted: () => void }) {
+function AgentCard({ a, live, publicUrl, onSecret, onDeleted }: { a: Address; live?: Address['stats']; publicUrl: string; onSecret: (s: { handle: string; token: string }) => void; onDeleted: () => void }) {
   const [tokens, setTokens] = useState<Token[]>()
   const stats = live ?? a.stats
   const online = !!a.endpoint || stats.sessions > 0
@@ -144,7 +155,7 @@ function AgentCard({ a, live, publicUrl, onSecret, onDeleted }: { a: Address; li
           <button
             className="rounded-lg p-2 text-muted hover:bg-surface-2 hover:text-ink"
             title="New token"
-            onClick={() => void api.mintToken(a.handle, 'web').then((r) => onSecret({ handle: a.handle, ...r }))}
+            onClick={() => void api.mintToken(a.handle, 'web').then((r) => onSecret({ handle: a.handle, token: r.token }))}
           >
             <KeyRound size={15} />
           </button>

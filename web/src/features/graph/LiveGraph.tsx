@@ -182,9 +182,9 @@ export function LiveGraph() {
           <div className="absolute top-1/2 left-1/2 w-[360px] -translate-x-1/2 -translate-y-1/2 card p-5 text-center">
             <Hourglass className="mx-auto mb-2 text-accent" />
             <h2 className="text-base font-bold">No agents yet</h2>
-            <p className="mt-1 text-sm text-muted">Create an agent address, run the tunnel command next to your agent, and it shows up here, live.</p>
-            <Link to="/agents" className="mt-3 inline-block rounded-lg bg-accent px-3 py-1.5 text-sm font-bold text-accent-ink">
-              Add an agent
+            <p className="mt-1 text-sm text-muted">Connect one in about two minutes: pick a handle, run one command (or the built-in echo agent), and it shows up here, live.</p>
+            <Link to="/agents?new=1" className="mt-3 inline-block rounded-lg bg-accent px-3 py-1.5 text-sm font-bold text-accent-ink">
+              Connect your first agent
             </Link>
           </div>
         )}
