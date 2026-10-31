@@ -146,6 +146,8 @@ export type Run = {
   entries: number
   startedAt: string
   updatedAt: string
+  /** When the longest-waiting task in the run started waiting. */
+  waitingSince?: string
   /** Hidden from the runs list. */
   archived?: boolean
 }
@@ -215,7 +217,7 @@ export const api = {
     call<{ result: A2ATask | Message }>('POST', '/api/send', m),
   graph: () => call<Graph>('GET', '/api/graph'),
   activity: (since: number, limit = 2000) => call<{ entries: Entry[] }>('GET', `/api/activity?since=${since}&limit=${limit}`),
-  runs: (f: { status?: RunStatus; q?: string; participant?: string; archived?: '1' } = {}) => {
+  runs: (f: { status?: RunStatus; q?: string; participant?: string; waitingOn?: string; archived?: '1' } = {}) => {
     const q = new URLSearchParams(Object.entries(f).filter(([, v]) => v) as [string, string][])
     return call<{ runs: Run[] }>('GET', `/api/runs${q.size ? `?${q}` : ''}`)
   },

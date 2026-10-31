@@ -7,7 +7,7 @@ import { normState } from '@/store/model'
 /** relay.FailureKey */
 export const FAILURE = 'https://threeagents.dev/ext/delivery-failure/v1'
 
-type Failure = { kind: 'agent-down' | 'unreachable' | 'timeout' | 'agent-error'; address: string; detail: string }
+type Failure = { kind: 'agent-down' | 'unreachable' | 'timeout' | 'task-lost' | 'agent-error'; address: string; detail: string }
 
 export type Diagnosis = {
   title: string
@@ -66,6 +66,14 @@ export function diagnose(d: RunDetail, name: (h: string) => string): Diagnosis |
           title: `${who} didn't answer in time`,
           cause: f.detail,
           hint: "Look in the agent's logs for a call that hangs. For long jobs, return a task right away and update it as you go.",
+        }
+      case 'task-lost':
+        return {
+          source: 'delivery',
+          address: f.address,
+          title: `${who} lost the task`,
+          cause: f.detail,
+          hint: 'The agent no longer knows this task, most likely because it restarted and keeps tasks in memory. Give it a persistent task store, then send the request again.',
         }
       default: {
         const x = httpError(d.exchanges, f.address)

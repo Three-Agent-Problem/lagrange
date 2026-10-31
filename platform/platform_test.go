@@ -927,6 +927,33 @@ type TaskViewJSON struct {
 	Task  *a2a.Task `json:"task"`
 }
 
+// ?waitingOn finds the runs blocked on someone, with how long they have waited.
+func TestRunsWaitingOn(t *testing.T) {
+	e := newEnv(t, "")
+	tok := e.agent(t, "buyer")
+	c := e.client(t, "ada", tok, "")
+	task := asTask(t)(c.SendMessage(t.Context(), text("Approve 5,416 EUR?")))
+	ada := e.login(t, adminEmail, adminPassword)
+	var runs struct {
+		Runs []struct {
+			ID           string
+			Waiting      []string
+			WaitingSince *time.Time
+		}
+	}
+	waitFor(t, "the run to wait on ada", func() bool {
+		ada.do(http.MethodGet, "/api/runs?waitingOn=ada", nil, http.StatusOK, &runs)
+		return len(runs.Runs) == 1
+	})
+	if runs.Runs[0].ID != string(task.ID) || runs.Runs[0].WaitingSince == nil || time.Since(*runs.Runs[0].WaitingSince) > time.Minute {
+		t.Fatalf("runs = %+v", runs.Runs)
+	}
+	ada.do(http.MethodGet, "/api/runs?waitingOn=bob", nil, http.StatusOK, &runs)
+	if len(runs.Runs) != 0 {
+		t.Fatalf("runs waiting on bob = %+v", runs.Runs)
+	}
+}
+
 // Archived runs leave the list and come back with ?archived=1.
 func TestArchiveRun(t *testing.T) {
 	e := newEnv(t, "")

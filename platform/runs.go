@@ -35,6 +35,8 @@ type Run struct {
 	Entries      int       `json:"entries"`
 	StartedAt    time.Time `json:"startedAt"`
 	UpdatedAt    time.Time `json:"updatedAt"`
+	// WaitingSince is when the longest-waiting task in the run started waiting.
+	WaitingSince *time.Time `json:"waitingSince,omitempty"`
 	// Archived runs are hidden from the list unless asked for (?archived=1).
 	Archived bool `json:"archived,omitempty"`
 }
@@ -108,6 +110,10 @@ func summarize(root *TaskView, tasks []*TaskView, entries []*activity.Entry) *Ru
 		if interruptedState(t.State) {
 			// An agent's question goes back to whoever sent it, unless it names someone.
 			add(&r.Waiting, firstNonEmpty(t.Awaiting, t.Sender))
+			if r.WaitingSince == nil || t.UpdatedAt.Before(*r.WaitingSince) {
+				since := t.UpdatedAt
+				r.WaitingSince = &since
+			}
 		}
 		if t.UpdatedAt.After(r.UpdatedAt) {
 			r.UpdatedAt = t.UpdatedAt
@@ -157,8 +163,8 @@ func runStatus(r *Run) string {
 }
 
 // handleRuns lists runs, newest activity first: ?status=running|waiting|done|failed,
-// ?q (title and participants), ?participant=<handle>, ?limit, ?archived=1 (only the
-// archived ones; otherwise they are left out).
+// ?q (title and participants), ?participant=<handle>, ?waitingOn=<handle> (runs blocked on
+// that address), ?limit, ?archived=1 (only the archived ones; otherwise they are left out).
 func (p *Platform) handleRuns(w http.ResponseWriter, r *http.Request, me *directory.User) {
 	ctx := r.Context()
 	q := r.URL.Query()
@@ -241,7 +247,7 @@ func (p *Platform) handleRuns(w http.ResponseWriter, r *http.Request, me *direct
 		apiError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	status, text, who := q.Get("status"), strings.ToLower(q.Get("q")), q.Get("participant")
+	status, text, who, blocker := q.Get("status"), strings.ToLower(q.Get("q")), q.Get("participant"), q.Get("waitingOn")
 	wantArchived := q.Get("archived") == "1"
 	runs = slices.DeleteFunc(runs, func(run *Run) bool {
 		run.Archived = archived[run.ID]
@@ -252,6 +258,9 @@ func (p *Platform) handleRuns(w http.ResponseWriter, r *http.Request, me *direct
 			return true
 		}
 		if who != "" && !slices.Contains(run.Participants, who) {
+			return true
+		}
+		if blocker != "" && !slices.Contains(run.Waiting, blocker) {
 			return true
 		}
 		if text != "" && !strings.Contains(strings.ToLower(run.Title+" "+strings.Join(run.Participants, " ")), text) {

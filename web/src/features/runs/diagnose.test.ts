@@ -39,6 +39,11 @@ describe('diagnose', () => {
     expect(diagnose(d, name)!.title).toBe('@buyer hit an error (HTTP 500)')
   })
 
+  it('explains an agent that lost the task', () => {
+    const d = run('TASK_STATE_FAILED', [task('t1', 'TASK_STATE_FAILED', 'buyer', 'x', { [FAILURE]: { kind: 'task-lost', address: 'buyer', detail: 'task not found' } })])
+    expect(diagnose(d, name)).toMatchObject({ title: '@buyer lost the task', source: 'delivery' })
+  })
+
   it("quotes an agent's own failure and a rejection", () => {
     expect(diagnose(run('TASK_STATE_FAILED', [task('t1', 'TASK_STATE_FAILED', 'buyer', 'No supplier can deliver in time.')]), name)).toMatchObject({
       title: '@buyer gave up', cause: 'No supplier can deliver in time.', source: 'answer',

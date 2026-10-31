@@ -12,6 +12,8 @@ import { StateBadge } from '@/ui/StateBadge'
 import { ago, duration } from '@/ui/time'
 import { diagnose } from '@/features/runs/diagnose'
 import { FailureBanner } from '@/features/runs/FailureBanner'
+import { TimeBar } from '@/features/runs/TimeBar'
+import { timeSplit } from '@/features/runs/timing'
 import { KIND_COLOR, Sequence } from '@/features/runs/Sequence'
 import { exchangeLine, exchangeParties, pretty, story, type Content, type Step } from '@/features/runs/story'
 
@@ -61,6 +63,7 @@ export function Runs() {
   const [status, setStatus] = useState<Filter>('')
   const [q, setQ] = useState('')
   const [participant, setParticipant] = useState('')
+  const [waitingOn, setWaitingOn] = useState('')
   const [runs, setRuns] = useState<Run[]>()
   const { addresses, user } = useSession()
   const { kind, name } = useNames()
@@ -72,10 +75,11 @@ export function Runs() {
         archived: status === 'hidden' ? '1' : undefined,
         q: q.trim() || undefined,
         participant: participant || undefined,
+        waitingOn: waitingOn || undefined,
       })
       .then((r) => setRuns(r.runs))
       .catch(() => setRuns([]))
-  }, [status, q, participant])
+  }, [status, q, participant, waitingOn])
   useEffect(() => {
     const t = setTimeout(load, q ? 250 : 0)
     return () => clearTimeout(t)
@@ -110,14 +114,24 @@ export function Runs() {
               </button>
             ))}
           </div>
-          <select className="input w-full py-1 text-xs" value={participant} onChange={(e) => setParticipant(e.target.value)} aria-label="Participant">
-            <option value="">Anyone involved</option>
-            {addresses.map((a) => (
-              <option key={a.handle} value={a.handle}>
-                {name(a.handle)}
-              </option>
-            ))}
-          </select>
+          <div className="flex gap-1.5">
+            <select className="input min-w-0 flex-1 py-1 text-xs" value={participant} onChange={(e) => setParticipant(e.target.value)} aria-label="Participant">
+              <option value="">Anyone involved</option>
+              {addresses.map((a) => (
+                <option key={a.handle} value={a.handle}>
+                  {name(a.handle)}
+                </option>
+              ))}
+            </select>
+            <select className={cn('input min-w-0 flex-1 py-1 text-xs', waitingOn && 'text-warn')} value={waitingOn} onChange={(e) => setWaitingOn(e.target.value)} aria-label="Waiting on">
+              <option value="">Waiting on anyone</option>
+              {addresses.map((a) => (
+                <option key={a.handle} value={a.handle}>
+                  Waiting on {name(a.handle)}
+                </option>
+              ))}
+            </select>
+          </div>
         </div>
         <ul className="scrollbar-thin min-h-0 flex-1 overflow-y-auto">
           {runs?.length === 0 && <li className="p-4 text-xs text-muted">{status === 'hidden' ? 'No hidden runs.' : 'No runs match. Send something from the Inbox.'}</li>}
@@ -146,6 +160,11 @@ export function Runs() {
                   </span>
                   {user && r.waiting.includes(user.handle) && <span className="ml-auto rounded-full bg-warn-soft px-1.5 py-0.5 text-[10px] font-bold text-warn">needs you</span>}
                 </div>
+                {r.waiting.length > 0 && r.waitingSince && (
+                  <p className="mt-1 text-[10.5px] font-semibold text-warn">
+                    Waiting on {r.waiting.map(name).join(', ')} for {duration(Date.now() - Date.parse(r.waitingSince))}
+                  </p>
+                )}
               </Link>
             </li>
           ))}
@@ -199,6 +218,7 @@ function RunView({ id, kind, name, onArchived }: { id: string; kind: (h: string)
 
   const s = useMemo(() => (data ? story(data, name) : undefined), [data, name])
   const diag = useMemo(() => (data ? diagnose(data, name) : undefined), [data, name])
+  const split = useMemo(() => (data ? timeSplit(data.entries, Date.now()) : undefined), [data])
   const archive = async (archived: boolean) => {
     await api.archiveRun(id, archived)
     onArchived()
@@ -290,9 +310,10 @@ function RunView({ id, kind, name, onArchived }: { id: string; kind: (h: string)
               {run.state === 'message' ? <span className="rounded-full bg-surface-2 px-2 py-0.5 text-[11px] font-bold text-muted">Message</span> : <StateBadge state={run.state} />}
             </div>
             <p className="mt-0.5 text-xs text-muted">
-              {name(run.starter)} → {name(run.recipient)} · {new Date(start).toLocaleString()} · took {duration(end - start)} · {steps.length} steps · {data.exchanges.length} HTTP exchanges
+              {name(run.starter)} → {name(run.recipient)} · {new Date(start).toLocaleString()} · took {duration(split?.segments.length ? split.end - split.start : end - start)} · {steps.length} steps · {data.exchanges.length} HTTP exchanges
               {run.waiting.length > 0 && <b className="text-warn"> · waiting for {run.waiting.map(name).join(', ')}</b>}
             </p>
+            {split && <TimeBar split={split} name={name} />}
           </div>
           <button
             className="flex items-center gap-1.5 rounded-lg border border-line px-2.5 py-1.5 text-xs font-bold text-muted hover:text-ink"

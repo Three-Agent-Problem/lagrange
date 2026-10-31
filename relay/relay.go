@@ -640,6 +640,8 @@ const (
 	FailureUnreachable = "unreachable"
 	// FailureTimeout: the agent did not answer in time.
 	FailureTimeout = "timeout"
+	// FailureTaskLost: the agent no longer knows the task (it restarted and keeps tasks in memory).
+	FailureTaskLost = "task-lost"
 	// FailureAgentError: the agent answered with an error, or with something that isn't A2A.
 	FailureAgentError = "agent-error"
 )
@@ -654,6 +656,8 @@ func classifyFailure(err error) (kind, detail string) {
 	msg := err.Error()
 	lower := strings.ToLower(msg)
 	switch {
+	case errors.Is(err, a2a.ErrTaskNotFound) || strings.Contains(lower, "task not found"):
+		return FailureTaskLost, msg
 	case errors.Is(err, context.DeadlineExceeded) || (errors.As(err, &netErr) && netErr.Timeout()) ||
 		strings.Contains(lower, "deadline exceeded") || strings.Contains(lower, "timeout"):
 		return FailureTimeout, msg
