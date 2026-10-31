@@ -68,6 +68,9 @@ type Config struct {
 	DevSeed string
 	// Queue tunes the work queue; zero values are the defaults.
 	Queue pg.WorkQueueConfig
+	// WaitTick is how often the team's wait policy (reminders, escalations, cancels) is
+	// applied (default 30s).
+	WaitTick time.Duration
 	// EventPoll is how often subscribers poll for task events (default 100ms).
 	EventPoll time.Duration
 	// Email sends notifications by email (notify.ParseSMTP). Nil: no email; Slack still works.
@@ -136,7 +139,7 @@ func New(ctx context.Context, cfg Config) (*Platform, error) {
 	}
 	p.queue = pg.NewWorkQueueBackend(db, cfg.WorkerID, cfg.Queue)
 	p.Notify = &notify.Notifier{Directory: p.Directory, PublicURL: cfg.PublicURL, Email: cfg.Email, Logger: log}
-	p.Relay = &relay.Relay{Directory: p.Directory, Links: p.Links, Activity: p.Activity, Mailbox: p.Mailbox, OnWaiting: p.Notify.Waiting, Logger: log}
+	p.Relay = &relay.Relay{Directory: p.Directory, Links: p.Links, Activity: p.Activity, Mailbox: p.Mailbox, OnWaiting: p.onWaiting, Logger: log}
 	handler := a2asrv.NewHandler(p.Relay,
 		a2asrv.WithClusterMode(a2asrv.ClusterConfig{
 			TaskStore:    p.Tasks,
@@ -180,6 +183,10 @@ func New(ctx context.Context, cfg Config) (*Platform, error) {
 		}
 	}
 	p.handler = p.routes()
+	if cfg.WaitTick <= 0 {
+		cfg.WaitTick = 30 * time.Second
+	}
+	go p.runWaitTimers(bg, cfg.WaitTick)
 	if p.seed = newSeeder(cfg, log); p.seed != nil {
 		// A server with no agents yet gets the scripted requests too.
 		var empty bool

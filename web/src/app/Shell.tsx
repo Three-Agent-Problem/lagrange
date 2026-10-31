@@ -1,4 +1,4 @@
-import { Bot, Inbox, ListTree, LogOut, Moon, Network, RotateCcw, Sun, Users } from 'lucide-react'
+import { Bot, Hourglass, Inbox, ListTree, LogOut, Moon, Network, RotateCcw, Sun, Users } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { NavLink, Outlet } from 'react-router'
 import { api } from '@/lib/api'
@@ -68,6 +68,7 @@ export function Shell() {
           {item('/', <Network size={19} />, 'Live')}
           {item('/inbox', <Inbox size={19} />, 'Inbox', waiting)}
           {item('/runs', <ListTree size={19} />, 'Runs')}
+          {item('/waiting', <Hourglass size={19} />, 'Waiting')}
           {item('/agents', <Bot size={19} />, 'Agents')}
           {item('/directory', <Users size={19} />, 'Directory')}
         </div>

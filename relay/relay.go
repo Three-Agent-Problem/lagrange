@@ -58,6 +58,9 @@ const (
 	// AttrAnsweredBy, in the a2asrv.User attributes of an inbox answer, names the person
 	// answering on the task owner's behalf. Only the platform's own API sets it.
 	AttrAnsweredBy = "lagrange.answeredBy"
+	// AttrAnswersFor, with AttrAnsweredBy, names the person an answer is given for: an
+	// escalation lets someone else answer in their place. Only the platform's API sets it.
+	AttrAnswersFor = "lagrange.answersFor"
 	// AttrDecision is "reject" when the person declined.
 	AttrDecision = "lagrange.decision"
 )
@@ -181,7 +184,7 @@ func (r *Relay) human(ec *a2asrv.ExecutorContext, addr *directory.Address, emit 
 		return
 	}
 	answeredBy, decision := userAttr(ec.User, AttrAnsweredBy), userAttr(ec.User, AttrDecision)
-	if answeredBy != addr.Handle {
+	if answeredBy != addr.Handle && userAttr(ec.User, AttrAnswersFor) != addr.Handle {
 		// The sender added something while the person hasn't answered yet.
 		emit(waiting())
 		return

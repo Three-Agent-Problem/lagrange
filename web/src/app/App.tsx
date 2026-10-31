@@ -10,6 +10,7 @@ import { LiveGraph } from '@/features/graph/LiveGraph'
 import { Inbox } from '@/features/inbox/Inbox'
 import { Runs } from '@/features/runs/Runs'
 import { Settings } from '@/features/settings/Settings'
+import { Waiting } from '@/features/waiting/Waiting'
 import { useSession } from '@/store/session'
 
 /** A decision link (/d/<token>) works without logging in: the token is the credential. */
@@ -40,7 +41,8 @@ function LoggedIn() {
           <Route path="runs" element={<Runs />} />
           <Route path="runs/:id" element={<Runs />} />
           <Route path="tasks/:id" element={<TaskRedirect />} />
-          <Route path="agents" element={<Agents />} />
+          <Route path="waiting" element={<Waiting />} />
+            <Route path="agents" element={<Agents />} />
           <Route path="directory" element={<Directory />} />
           <Route path="settings" element={<Settings />} />
         </Route>

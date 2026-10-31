@@ -4,12 +4,13 @@ import { Link, useNavigate, useParams, useSearchParams } from 'react-router'
 import { api, type Exchange, type Run, type RunDetail, type RunStatus } from '@/lib/api'
 import { cn } from '@/lib/cn'
 import { useLive } from '@/store/live'
-import { normState, OUTSIDE } from '@/store/model'
-import { addressMap, useSession } from '@/store/session'
+import { normState } from '@/store/model'
+import { useSession } from '@/store/session'
 import { Avatar } from '@/ui/Avatar'
 import { DataChips } from '@/ui/DataView'
 import { StateBadge } from '@/ui/StateBadge'
 import { ago, duration } from '@/ui/time'
+import { useNames } from '@/ui/useNames'
 import { diagnose } from '@/features/runs/diagnose'
 import { FailureBanner } from '@/features/runs/FailureBanner'
 import { TimeBar } from '@/features/runs/TimeBar'
@@ -40,21 +41,6 @@ function useOnActivity(fn: () => void, ms = 400) {
     const t = setTimeout(fn, ms)
     return () => clearTimeout(t)
   }, [seq, fn, ms])
-}
-
-function useNames() {
-  const addresses = useSession((s) => s.addresses)
-  const byHandle = useMemo(() => addressMap(addresses), [addresses])
-  const kind = useCallback((h: string) => byHandle[h]?.kind, [byHandle])
-  const name = useCallback(
-    (h: string) => {
-      if (!h || h === OUTSIDE) return 'Outside client'
-      const a = byHandle[h]
-      return a?.kind === 'human' ? a.displayName || h : `@${h}`
-    },
-    [byHandle],
-  )
-  return { kind, name }
 }
 
 export function Runs() {

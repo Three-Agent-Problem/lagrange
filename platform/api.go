@@ -53,6 +53,10 @@ func (p *Platform) api(mux *http.ServeMux) {
 	mux.Handle("PUT /api/settings/notifications", p.authed(p.handleSetNotificationSettings))
 	mux.Handle("POST /api/settings/notifications/test", p.authed(p.handleTestNotification))
 	mux.Handle("POST /api/dev/reset", p.authed(p.handleDevReset))
+	mux.Handle("GET /api/waiting", p.authed(p.handleWaiting))
+	mux.Handle("POST /api/waiting/{id}/remind", p.authed(p.handleRemind))
+	mux.Handle("GET /api/settings/wait-policy", p.authed(p.handleWaitPolicy))
+	mux.Handle("PUT /api/settings/wait-policy", p.authed(p.handleSetWaitPolicy))
 	// Decision links carry their own credential, so they need no session.
 	mux.HandleFunc("GET /api/decisions/{token}", p.handleDecision)
 	mux.HandleFunc("POST /api/decisions/{token}", p.handleDecisionAnswer)
@@ -546,6 +550,13 @@ func (p *Platform) answer(ctx context.Context, me *directory.User, id string, bo
 	case tenant == me.Handle:
 		// A task for me: answer on the sender's behalf, as the person it waits for.
 		attrs[relay.AttrAnsweredBy] = me.Handle
+		if body.Decision == "reject" {
+			attrs[relay.AttrDecision] = "reject"
+		}
+	case stored.User != me.Handle && p.escalatedTo(ctx, id) == me.Handle:
+		// Escalated to me: answer on behalf of the person it waited for.
+		attrs[relay.AttrAnsweredBy] = me.Handle
+		attrs[relay.AttrAnswersFor] = tenant
 		if body.Decision == "reject" {
 			attrs[relay.AttrDecision] = "reject"
 		}

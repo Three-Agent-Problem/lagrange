@@ -82,6 +82,26 @@ export type TaskView = {
   challenge?: { id: string; integration: string; url: string; expiresAt: string }
 }
 
+/** The team's rules for tasks waiting on someone. Delays are seconds; null is off. */
+export type WaitPolicy = { remindAfter: number | null; escalateAfter: number | null; escalateTo: string; cancelAfter: number | null }
+
+/** A task waiting on someone, on the waiting board. */
+export type Wait = {
+  task: TaskView
+  runId: string
+  who: string
+  asker: string
+  person: boolean
+  since: string
+  reminders: number
+  remindedAt?: string
+  escalatedTo?: string
+  escalatedAt?: string
+  remindAt?: string
+  escalateAt?: string
+  cancelAt?: string
+}
+
 export type JSONSchema = {
   type?: string | string[]
   title?: string
@@ -223,6 +243,9 @@ export const api = {
   },
   run: (id: string) => call<RunDetail>('GET', `/api/runs/${encodeURIComponent(id)}`),
   /** Hide a run from the list (true) or show it again (false). */
+  waiting: () => call<{ waiting: Wait[]; policy: WaitPolicy }>('GET', '/api/waiting'),
+  remind: (taskId: string) => call<void>('POST', `/api/waiting/${encodeURIComponent(taskId)}/remind`, {}),
+  setWaitPolicy: (p: WaitPolicy) => call<{ policy: WaitPolicy }>('PUT', '/api/settings/wait-policy', p),
   archiveRun: (id: string, archived: boolean) => call<void>(archived ? 'POST' : 'DELETE', `/api/runs/${encodeURIComponent(id)}/archive`, {}),
 }
 

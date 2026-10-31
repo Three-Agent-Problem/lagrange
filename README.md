@@ -16,6 +16,7 @@ A Lagrange point is where a body can hold still between two others. Lagrange is 
 - **Coding agents as addresses.** `lagrange tunnel --acp claude-agent-acp` turns any [Agent Client Protocol](https://agentclientprotocol.com) agent (Claude Code, Gemini CLI, opencode, Codex) into an A2A agent. Its "may I run this?" prompts land in your inbox.
 - **People in the loop.** A task sent to a person waits as `INPUT_REQUIRED` in their inbox. When an agent asks its sender a question (with a [structured input](https://github.com/a2aproject/a2a-go/tree/main/a2aext/structuredinput) schema, it becomes a form) the question shows up in the sender's inbox and on the graph, and is answered right there.
 - **Questions reach people where they are.** When a task waits on someone, they get an email (with `LAGRANGE_SMTP_URL`) and/or a Slack message (their own incoming webhook, set in Settings) with the question in plain words and a one-time link. The link opens just that question, on a phone too, and answers it as them without logging in; it works once and expires after 7 days.
+- **Nothing waits forever.** The Waiting page lists every task blocked on someone, grouped by who and oldest first. An admin sets the team's rules: remind the person after a delay (up to 3 times), escalate to a backup who can answer in their place (by email link or right on the board, recorded as the backup's answer), and cancel the task after a longer one. Anyone can send a reminder by hand.
 - **Durable.** The platform owns every task: it stores tasks and events in Postgres and forwards the work to the agent. Work survives server restarts (a2a-go cluster mode on a Postgres work queue with leases) and agent restarts.
 - **A live view.** The web app shows addresses as nodes and tasks as moving packets on the edges between them, with mailbox depth, workers and waiting questions.
 - **Runs, step by step.** Each request and everything it set off (delegations, quotes, questions, answers, webhooks) is one run. The Runs page tells it as numbered steps in plain words next to a sequence diagram, replays it one step at a time, and keeps the raw A2A events and every HTTP request and response behind each step. Find runs by status, participant or text.
@@ -30,6 +31,8 @@ A Lagrange point is where a body can hold still between two others. Lagrange is 
 | The buyer asks Ada to approve; she answers on the graph. | The inbox: a thread per contact, with the question as a form. |
 | ![Agents](docs/screenshots/agents.png) | ![Directory](docs/screenshots/directory.png) |
 | Agents: addresses, tunnels, workers, capacity, tokens. | The directory: people and agents, each with a card. |
+| ![The waiting board](docs/screenshots/waiting.png) | ![Answering an escalation](docs/screenshots/waiting-escalated.png) |
+| Waiting: an approval Ada hasn't answered, reminded and escalated to Bob by the team's rules. | Bob answers in Ada's place, right on the board. |
 | ![Dark live graph](docs/screenshots/live-graph-dark.png) | ![Dark runs](docs/screenshots/runs-dark.png) |
 
 ## Run it
@@ -262,7 +265,7 @@ And two HTTP headers (gRPC metadata) that agents on the platform send with their
 
 1. Coding agents for real: run `lagrange tunnel --acp claude-agent-acp` end to end, and a Claude-powered demo agent.
 2. Signup, organizations and invites; changing passwords in the app.
-3. Slack and email notifications with answer links, SLA timers (remind, escalate, cancel), OpenTelemetry with `traceparent` across hops.
+3. OpenTelemetry with `traceparent` across hops.
 4. Several Lagrange replicas behind one load balancer (cluster mode and `LISTEN/NOTIFY` are built for it; this release tests one replica).
 5. An MCP bridge, so MCP clients can message addresses; pruning of recorded exchanges.
 

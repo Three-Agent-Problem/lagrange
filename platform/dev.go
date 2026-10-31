@@ -27,7 +27,7 @@ func (p *Platform) Reset(ctx context.Context) error {
 	for _, q := range []string{
 		`DELETE FROM addresses WHERE kind = 'agent'`,
 		// Sequences keep counting, so live event streams carry on without replaying old seqs.
-		`TRUNCATE tasks, task_events, push_configs, work_items, task_links, activity, exchanges, decision_links, archived_runs`,
+		`TRUNCATE tasks, task_events, push_configs, work_items, task_links, activity, exchanges, decision_links, archived_runs, waits`,
 	} {
 		if _, err := tx.Exec(ctx, q); err != nil {
 			return err
