@@ -182,6 +182,11 @@ func (d *Directory) Users(ctx context.Context) ([]*User, error) {
 	})
 }
 
+// UserByHandle returns the person whose address is handle.
+func (d *Directory) UserByHandle(ctx context.Context, handle string) (*User, error) {
+	return d.userWhere(ctx, "handle = $1", handle)
+}
+
 func (d *Directory) userWhere(ctx context.Context, cond string, arg any) (*User, error) {
 	var u User
 	err := d.db.Pool.QueryRow(ctx, `SELECT id, email, name, handle, admin FROM users WHERE `+cond, arg).
@@ -324,6 +329,80 @@ func (d *Directory) TokenHandle(ctx context.Context, token string) (string, erro
 		return "", ErrNotFound
 	}
 	return handle, err
+}
+
+// NotificationSettings is how a person wants to hear that a task waits on them.
+type NotificationSettings struct {
+	Email bool `json:"email"`
+	// SlackWebhook is a Slack incoming webhook URL; empty means no Slack.
+	SlackWebhook string `json:"slackWebhook"`
+}
+
+// NotificationSettings returns a person's settings, or the defaults (email on).
+func (d *Directory) NotificationSettings(ctx context.Context, userID int64) (*NotificationSettings, error) {
+	s := &NotificationSettings{Email: true}
+	err := d.db.Pool.QueryRow(ctx, `SELECT email, slack_webhook FROM notification_settings WHERE user_id = $1`, userID).Scan(&s.Email, &s.SlackWebhook)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return s, nil
+	}
+	return s, err
+}
+
+// SetNotificationSettings stores a person's settings.
+func (d *Directory) SetNotificationSettings(ctx context.Context, userID int64, s *NotificationSettings) error {
+	_, err := d.db.Pool.Exec(ctx, `INSERT INTO notification_settings (user_id, email, slack_webhook) VALUES ($1, $2, $3)
+		ON CONFLICT (user_id) DO UPDATE SET email = $2, slack_webhook = $3, updated_at = now()`, userID, s.Email, s.SlackWebhook)
+	return err
+}
+
+// DecisionLink lets whoever holds it answer one task as Handle, once.
+type DecisionLink struct {
+	TaskID    string
+	Handle    string
+	ExpiresAt time.Time
+}
+
+// MintDecisionLink creates a link token for a task waiting on handle. Only its hash is
+// stored.
+func (d *Directory) MintDecisionLink(ctx context.Context, taskID, handle string, ttl time.Duration) (string, error) {
+	token := newSecret("lgd_")
+	_, err := d.db.Pool.Exec(ctx, `INSERT INTO decision_links (token_hash, task_id, handle, expires_at) VALUES ($1, $2, $3, $4)`,
+		hashToken(token), taskID, handle, time.Now().Add(ttl))
+	if err != nil {
+		return "", err
+	}
+	return token, nil
+}
+
+// DecisionLink returns an unused, unexpired link.
+func (d *Directory) DecisionLink(ctx context.Context, token string) (*DecisionLink, error) {
+	return d.decisionLink(ctx, `SELECT task_id, handle, expires_at FROM decision_links
+		WHERE token_hash = $1 AND used_at IS NULL AND expires_at > now()`, token)
+}
+
+// ClaimDecisionLink marks a link used and returns it, unless it was used or expired.
+// Of two concurrent claims, only one succeeds.
+func (d *Directory) ClaimDecisionLink(ctx context.Context, token string) (*DecisionLink, error) {
+	return d.decisionLink(ctx, `UPDATE decision_links SET used_at = now()
+		WHERE token_hash = $1 AND used_at IS NULL AND expires_at > now() RETURNING task_id, handle, expires_at`, token)
+}
+
+// ReleaseDecisionLink makes a claimed link usable again, after the answer failed.
+func (d *Directory) ReleaseDecisionLink(ctx context.Context, token string) error {
+	_, err := d.db.Pool.Exec(ctx, `UPDATE decision_links SET used_at = NULL WHERE token_hash = $1`, hashToken(token))
+	return err
+}
+
+func (d *Directory) decisionLink(ctx context.Context, query, token string) (*DecisionLink, error) {
+	var l DecisionLink
+	err := d.db.Pool.QueryRow(ctx, query, hashToken(token)).Scan(&l.TaskID, &l.Handle, &l.ExpiresAt)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &l, nil
 }
 
 var dummyHash = sync.OnceValue(func() []byte {

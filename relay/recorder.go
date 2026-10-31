@@ -70,6 +70,13 @@ func (rec *recorder) input(m *a2a.Message, who string) {
 	rec.add(e)
 }
 
+// waiting reports a task that stopped on someone to OnWaiting.
+func (rec *recorder) waiting(e *activity.Entry, question *a2a.Message) {
+	if rec.r.OnWaiting != nil && e.Seq != 0 && interrupted(a2a.TaskState(e.State)) {
+		rec.r.OnWaiting(rec.ctx, Waiting{Entry: e, Question: question})
+	}
+}
+
 // note logs something that isn't an A2A event, such as waiting in the mailbox.
 func (rec *recorder) note(kind, summary string) {
 	e := rec.entry(kind)
@@ -88,6 +95,7 @@ func (rec *recorder) record(ev a2a.Event) {
 		e.State = string(ev.Status.State)
 		e.Summary = Describe(rec.ec.Message)
 		rec.add(e)
+		rec.waiting(e, ev.Status.Message)
 
 	case *a2a.TaskStatusUpdateEvent:
 		e := rec.entry(activity.KindTask)
@@ -102,6 +110,11 @@ func (rec *recorder) record(ev a2a.Event) {
 			}
 		}
 		rec.add(e)
+		question := ev.Status.Message
+		if rec.addr.Kind == directory.KindHuman {
+			question = rec.ec.Message
+		}
+		rec.waiting(e, question)
 
 	case *a2a.TaskArtifactUpdateEvent:
 		e := rec.entry(activity.KindArtifact)

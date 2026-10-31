@@ -28,6 +28,7 @@ import (
 	"github.com/a2aproject/a2a-go/v2/integrations/executor/a2aacp"
 
 	"github.com/three-agent-problem/lagrange/directory"
+	"github.com/three-agent-problem/lagrange/notify"
 	"github.com/three-agent-problem/lagrange/pg"
 	"github.com/three-agent-problem/lagrange/platform"
 	"github.com/three-agent-problem/lagrange/tunnel"
@@ -96,6 +97,14 @@ func serve(ctx context.Context, args []string) error {
 	_ = fs.Parse(args)
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
+	var email notify.Email
+	if u := os.Getenv("LAGRANGE_SMTP_URL"); u != "" {
+		s, err := notify.ParseSMTP(u, env("LAGRANGE_SMTP_FROM", "lagrange@localhost"))
+		if err != nil {
+			return err
+		}
+		email = s
+	}
 	p, err := platform.New(ctx, platform.Config{
 		DatabaseURL:      *dbURL,
 		PublicURL:        *publicURL,
@@ -106,6 +115,7 @@ func serve(ctx context.Context, args []string) error {
 		WorkerID:         os.Getenv("LAGRANGE_WORKER_ID"),
 		AllowPrivatePush: os.Getenv("LAGRANGE_ALLOW_PRIVATE_PUSH") == "1",
 		Web:              web.FS(),
+		Email:            email,
 		Logger:           logger,
 	})
 	if err != nil {
@@ -120,7 +130,7 @@ func serve(ctx context.Context, args []string) error {
 		defer cancel()
 		_ = srv.Shutdown(sctx)
 	}()
-	logger.Info("lagrange listening", "addr", *addr, "public", *publicURL, "web", web.FS() != nil)
+	logger.Info("lagrange listening", "addr", *addr, "public", *publicURL, "web", web.FS() != nil, "email", email != nil)
 	if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		return err
 	}

@@ -22,6 +22,7 @@ import (
 	"github.com/three-agent-problem/lagrange/credentials"
 	"github.com/three-agent-problem/lagrange/directory"
 	"github.com/three-agent-problem/lagrange/mailbox"
+	"github.com/three-agent-problem/lagrange/notify"
 	"github.com/three-agent-problem/lagrange/relay"
 )
 
@@ -46,6 +47,12 @@ func (p *Platform) api(mux *http.ServeMux) {
 	mux.Handle("GET /api/runs", p.authed(p.handleRuns))
 	mux.Handle("GET /api/runs/{id}", p.authed(p.handleRun))
 	mux.Handle("GET /api/activity", p.authed(p.handleActivity))
+	mux.Handle("GET /api/settings/notifications", p.authed(p.handleNotificationSettings))
+	mux.Handle("PUT /api/settings/notifications", p.authed(p.handleSetNotificationSettings))
+	mux.Handle("POST /api/settings/notifications/test", p.authed(p.handleTestNotification))
+	// Decision links carry their own credential, so they need no session.
+	mux.HandleFunc("GET /api/decisions/{token}", p.handleDecision)
+	mux.HandleFunc("POST /api/decisions/{token}", p.handleDecisionAnswer)
 	mux.Handle("GET /api/events", p.authed(func(w http.ResponseWriter, r *http.Request, _ *directory.User) {
 		p.Activity.Stream(w, r)
 	}))
@@ -499,28 +506,37 @@ func (p *Platform) handleSend(w http.ResponseWriter, r *http.Request, me *direct
 	writeJSON(w, http.StatusOK, map[string]any{"result": res})
 }
 
+type answerBody struct {
+	Text     string         `json:"text"`
+	Data     map[string]any `json:"data"`
+	Decision string         `json:"decision"`
+}
+
 // handleAnswer answers a task waiting for input: a person answering a task addressed to
 // them, or the sender answering the agent's question. With a structured input request,
 // data is the answer object.
 func (p *Platform) handleAnswer(w http.ResponseWriter, r *http.Request, me *directory.User) {
-	var body struct {
-		Text     string         `json:"text"`
-		Data     map[string]any `json:"data"`
-		Decision string         `json:"decision"`
-	}
+	var body answerBody
 	if err := decode(r, &body); err != nil {
 		apiError(w, http.StatusBadRequest, "send {text, data, decision}")
 		return
 	}
-	stored, tenant, err := p.Tasks.Load(r.Context(), a2a.TaskID(r.PathValue("id")))
-	if err != nil {
-		apiError(w, statusOf(err), err.Error())
+	if status, err := p.answer(r.Context(), me, r.PathValue("id"), &body); err != nil {
+		apiError(w, status, err.Error())
 		return
+	}
+	w.WriteHeader(http.StatusAccepted)
+}
+
+// answer answers task id as me. On failure it returns the HTTP status to report.
+func (p *Platform) answer(ctx context.Context, me *directory.User, id string, body *answerBody) (int, error) {
+	stored, tenant, err := p.Tasks.Load(ctx, a2a.TaskID(id))
+	if err != nil {
+		return statusOf(err), err
 	}
 	task := stored.Task
 	if task.Status.State != a2a.TaskStateInputRequired {
-		apiError(w, http.StatusConflict, "the task isn't waiting for an answer")
-		return
+		return http.StatusConflict, errors.New("the task isn't waiting for an answer")
 	}
 	attrs := map[string]any{"kind": directory.KindHuman}
 	switch {
@@ -532,8 +548,7 @@ func (p *Platform) handleAnswer(w http.ResponseWriter, r *http.Request, me *dire
 		}
 	case stored.User == me.Handle, me.Admin:
 	default:
-		apiError(w, http.StatusForbidden, "this task doesn't wait for you")
-		return
+		return http.StatusForbidden, errors.New("this task doesn't wait for you")
 	}
 
 	var msg *a2a.Message
@@ -543,25 +558,123 @@ func (p *Platform) handleAnswer(w http.ResponseWriter, r *http.Request, me *dire
 			extra = append(extra, a2a.NewTextPart(t))
 		}
 		if msg, err = structuredinput.NewResponse(task, req, body.Data, extra...); err != nil {
-			apiError(w, http.StatusBadRequest, err.Error())
-			return
+			return http.StatusBadRequest, err
 		}
 	} else {
 		parts := (&sendBody{Text: body.Text, Data: body.Data}).parts()
 		if len(parts) == 0 {
-			apiError(w, http.StatusBadRequest, "the answer is empty")
-			return
+			return http.StatusBadRequest, errors.New("the answer is empty")
 		}
 		msg = a2a.NewMessageForTask(a2a.MessageRoleUser, task, parts...)
 	}
 	msg.SetMeta(relay.AnsweredByKey, me.Handle)
-	if _, err := p.A2A.SendMessage(callAs(r.Context(), stored.User, attrs), &a2a.SendMessageRequest{
+	if _, err := p.A2A.SendMessage(callAs(ctx, stored.User, attrs), &a2a.SendMessageRequest{
 		Tenant: tenant, Message: msg, Config: &a2a.SendMessageConfig{ReturnImmediately: true},
 	}); err != nil {
-		apiError(w, statusOf(err), err.Error())
+		return statusOf(err), err
+	}
+	return 0, nil
+}
+
+const linkGone = "This link was already used or has expired. Open your inbox to see the task."
+
+// handleDecision returns the task a decision link answers, and who it is for. The link
+// is the credential and reaches only this one task.
+func (p *Platform) handleDecision(w http.ResponseWriter, r *http.Request) {
+	link, err := p.Directory.DecisionLink(r.Context(), r.PathValue("token"))
+	if errors.Is(err, directory.ErrNotFound) {
+		apiError(w, http.StatusGone, linkGone)
+		return
+	}
+	if err != nil {
+		apiError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	tasks, err := p.queryTasks(r.Context(), true, `WHERE t.id = $1`, link.TaskID)
+	if err != nil {
+		apiError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	u, err := p.Directory.UserByHandle(r.Context(), link.Handle)
+	if len(tasks) == 0 || err != nil {
+		apiError(w, http.StatusGone, linkGone)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"task": tasks[0], "for": map[string]string{"handle": u.Handle, "name": u.Name}, "expiresAt": link.ExpiresAt,
+	})
+}
+
+// handleDecisionAnswer answers the task of a decision link as the person it was sent
+// to, and uses the link up.
+func (p *Platform) handleDecisionAnswer(w http.ResponseWriter, r *http.Request) {
+	if mt, _, _ := mime.ParseMediaType(r.Header.Get("Content-Type")); mt != "application/json" {
+		apiError(w, http.StatusUnsupportedMediaType, "send JSON")
+		return
+	}
+	var body answerBody
+	if err := decode(r, &body); err != nil {
+		apiError(w, http.StatusBadRequest, "send {text, data, decision}")
+		return
+	}
+	ctx, token := r.Context(), r.PathValue("token")
+	link, err := p.Directory.ClaimDecisionLink(ctx, token)
+	if errors.Is(err, directory.ErrNotFound) {
+		apiError(w, http.StatusGone, linkGone)
+		return
+	}
+	if err != nil {
+		apiError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	status, err := http.StatusGone, errors.New(linkGone)
+	if u, uerr := p.Directory.UserByHandle(ctx, link.Handle); uerr == nil {
+		status, err = p.answer(ctx, u, link.TaskID, &body)
+	}
+	if err != nil {
+		// The answer didn't go through, so the link still works.
+		if rerr := p.Directory.ReleaseDecisionLink(context.WithoutCancel(ctx), token); rerr != nil {
+			p.log.Warn("platform: releasing a decision link failed", "error", rerr)
+		}
+		apiError(w, status, err.Error())
 		return
 	}
 	w.WriteHeader(http.StatusAccepted)
+}
+
+func (p *Platform) handleNotificationSettings(w http.ResponseWriter, r *http.Request, me *directory.User) {
+	s, err := p.Directory.NotificationSettings(r.Context(), me.ID)
+	if err != nil {
+		apiError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"settings": s, "emailAvailable": p.cfg.Email != nil, "email": me.Email})
+}
+
+func (p *Platform) handleSetNotificationSettings(w http.ResponseWriter, r *http.Request, me *directory.User) {
+	var s directory.NotificationSettings
+	if err := decode(r, &s); err != nil {
+		apiError(w, http.StatusBadRequest, "send {email, slackWebhook}")
+		return
+	}
+	s.SlackWebhook = strings.TrimSpace(s.SlackWebhook)
+	if s.SlackWebhook != "" && !notify.ValidSlackWebhook(s.SlackWebhook) {
+		apiError(w, http.StatusBadRequest, "a Slack incoming webhook URL starts with https://hooks.slack.com/")
+		return
+	}
+	if err := p.Directory.SetNotificationSettings(r.Context(), me.ID, &s); err != nil {
+		apiError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"settings": s, "emailAvailable": p.cfg.Email != nil, "email": me.Email})
+}
+
+func (p *Platform) handleTestNotification(w http.ResponseWriter, r *http.Request, me *directory.User) {
+	if err := p.Notify.Test(r.Context(), me); err != nil {
+		apiError(w, http.StatusBadGateway, "the test notification failed: "+err.Error())
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (p *Platform) handleCancel(w http.ResponseWriter, r *http.Request, me *directory.User) {
@@ -697,6 +810,8 @@ func webHandler(web fs.FS) http.Handler {
 	}
 	files := http.FileServerFS(web)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Decision links (/d/<token>) must not leak to other sites through Referer.
+		w.Header().Set("Referrer-Policy", "same-origin")
 		name := strings.TrimPrefix(path.Clean(r.URL.Path), "/")
 		if name == "" {
 			name = "index.html"

@@ -48,7 +48,8 @@ type env struct {
 }
 
 // newEnv starts a platform on dbURL (a new database if empty) behind a test server.
-func newEnv(t *testing.T, dbURL string) *env {
+// opts adjust the config.
+func newEnv(t *testing.T, dbURL string, opts ...func(*platform.Config)) *env {
 	t.Helper()
 	if dbURL == "" {
 		dbURL = pgtest.URL(t)
@@ -56,7 +57,7 @@ func newEnv(t *testing.T, dbURL string) *env {
 	mux := http.NewServeMux()
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
-	p, err := platform.New(t.Context(), platform.Config{
+	cfg := platform.Config{
 		DatabaseURL:      dbURL,
 		PublicURL:        srv.URL,
 		AdminEmail:       adminEmail,
@@ -68,7 +69,11 @@ func newEnv(t *testing.T, dbURL string) *env {
 		Queue:            pg.WorkQueueConfig{Lease: 3 * time.Second, Poll: 100 * time.Millisecond},
 		EventPoll:        20 * time.Millisecond,
 		Logger:           quiet,
-	})
+	}
+	for _, o := range opts {
+		o(&cfg)
+	}
+	p, err := platform.New(t.Context(), cfg)
 	if err != nil {
 		t.Fatal(err)
 	}

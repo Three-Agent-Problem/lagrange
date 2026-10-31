@@ -15,16 +15,19 @@ export function Logo({ size = 34 }: { size?: number }) {
   )
 }
 
+/** The theme the person picked, or else the system's. */
+export function savedTheme(): 'light' | 'dark' {
+  try {
+    const saved = localStorage.getItem('lagrange-theme')
+    if (saved === 'light' || saved === 'dark') return saved
+  } catch {
+    /* storage unavailable */
+  }
+  return matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
+}
+
 function useTheme() {
-  const [theme, setTheme] = useState<'light' | 'dark'>(() => {
-    try {
-      const saved = localStorage.getItem('lagrange-theme')
-      if (saved === 'light' || saved === 'dark') return saved
-    } catch {
-      /* storage unavailable */
-    }
-    return matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
-  })
+  const [theme, setTheme] = useState(savedTheme)
   useEffect(() => {
     document.documentElement.dataset.theme = theme
     try {
@@ -72,9 +75,9 @@ export function Shell() {
             {theme === 'dark' ? <Sun size={17} /> : <Moon size={17} />}
           </button>
           {user && (
-            <span title={`${user.name} (@${user.handle})`}>
+            <NavLink to="/settings" title={`${user.name} (@${user.handle}): settings`} className={({ isActive }) => cn('rounded-full', isActive && 'ring-2 ring-accent ring-offset-2 ring-offset-surface')}>
               <Avatar handle={user.handle} kind="human" name={user.name} size={32} />
-            </span>
+            </NavLink>
           )}
           <button className="rounded-lg p-2 text-muted hover:bg-surface-2 hover:text-bad" onClick={() => void logout()} title="Log out">
             <LogOut size={16} />

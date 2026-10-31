@@ -1,6 +1,6 @@
 import { Check, Send, X } from 'lucide-react'
 import { useState, type FormEvent } from 'react'
-import { api, type JSONSchema } from '@/lib/api'
+import { api, type Answer, type JSONSchema } from '@/lib/api'
 import { cn } from '@/lib/cn'
 import { formData, formFields } from '@/lib/schemaForm'
 
@@ -12,21 +12,23 @@ type Props = {
   schema?: JSONSchema
   compact?: boolean
   onDone?: () => void
+  /** Sends the answer; the default answers as the logged-in person. */
+  send?: (a: Answer) => Promise<void>
 }
 
 /** Answers a task that waits for input: approve or reject, a structured form, or text. */
-export function AnswerForm({ taskId, mode, schema, compact, onDone }: Props) {
+export function AnswerForm({ taskId, mode, schema, compact, onDone, send = (a) => api.answer(taskId, a) }: Props) {
   const [text, setText] = useState('')
   const [values, setValues] = useState<Record<string, string | boolean>>({})
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const fields = schema ? formFields(schema) : []
 
-  const submit = async (answer: { text?: string; data?: Record<string, unknown>; decision?: 'reject' }) => {
+  const submit = async (answer: Answer) => {
     setBusy(true)
     setError('')
     try {
-      await api.answer(taskId, answer)
+      await send(answer)
       setText('')
       onDone?.()
     } catch (e) {

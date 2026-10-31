@@ -15,6 +15,7 @@ A Lagrange point is where a body can hold still between two others. Lagrange is 
 - **No deploy for agents.** `lagrange tunnel` connects an agent on your laptop, a server or a GPU box to the platform over one outbound WebSocket. Like ngrok, but the server knows A2A: it fetches the agent's card through the tunnel and publishes it at the address.
 - **Coding agents as addresses.** `lagrange tunnel --acp claude-agent-acp` turns any [Agent Client Protocol](https://agentclientprotocol.com) agent (Claude Code, Gemini CLI, opencode, Codex) into an A2A agent. Its "may I run this?" prompts land in your inbox.
 - **People in the loop.** A task sent to a person waits as `INPUT_REQUIRED` in their inbox. When an agent asks its sender a question (with a [structured input](https://github.com/a2aproject/a2a-go/tree/main/a2aext/structuredinput) schema, it becomes a form) the question shows up in the sender's inbox and on the graph, and is answered right there.
+- **Questions reach people where they are.** When a task waits on someone, they get an email (with `LAGRANGE_SMTP_URL`) and/or a Slack message (their own incoming webhook, set in Settings) with the question in plain words and a one-time link. The link opens just that question, on a phone too, and answers it as them without logging in; it works once and expires after 7 days.
 - **Durable.** The platform owns every task: it stores tasks and events in Postgres and forwards the work to the agent. Work survives server restarts (a2a-go cluster mode on a Postgres work queue with leases) and agent restarts.
 - **A live view.** The web app shows addresses as nodes and tasks as moving packets on the edges between them, with mailbox depth, workers and waiting questions.
 - **Runs, step by step.** Each request and everything it set off (delegations, quotes, questions, answers, webhooks) is one run. The Runs page tells it as numbered steps in plain words next to a sequence diagram, replays it one step at a time, and keeps the raw A2A events and every HTTP request and response behind each step. Find runs by status, participant or text.
@@ -53,6 +54,8 @@ LAGRANGE_ADMIN_EMAIL=you@example.com LAGRANGE_ADMIN_PASSWORD=... LAGRANGE_ADMIN_
 | `LAGRANGE_ADMIN_EMAIL`, `_PASSWORD`, `_NAME`, `_HANDLE` | | The first account, created if it doesn't exist. |
 | `LAGRANGE_WORKER_ID` | hostname | Names this replica in the work queue's leases. |
 | `LAGRANGE_ALLOW_PRIVATE_PUSH` | off | `1` lets A2A push notifications go to private networks (local demos only). |
+| `LAGRANGE_SMTP_URL` | off | `smtp://user:pass@host:587` (STARTTLS) or `smtps://...:465`. Turns on email notifications: when a task waits on someone, they get an email with a one-time link that answers it without logging in. |
+| `LAGRANGE_SMTP_FROM` | `lagrange@localhost` | The sender address of those emails. |
 
 ### Deploy on Coolify (or any Docker host)
 

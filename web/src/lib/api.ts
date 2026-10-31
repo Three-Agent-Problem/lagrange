@@ -148,6 +148,15 @@ export type Run = {
   updatedAt: string
 }
 
+export type Answer = { text?: string; data?: Record<string, unknown>; decision?: 'reject' }
+
+/** A task as a decision link shows it (GET /api/decisions/{token}). */
+export type Decision = { task: TaskView; for: { handle: string; name: string }; expiresAt: string }
+
+export type NotificationSettings = { email: boolean; slackWebhook: string }
+
+export type NotificationSettingsView = { settings: NotificationSettings; emailAvailable: boolean; email: string }
+
 export type RunStatus = 'running' | 'waiting' | 'done' | 'failed'
 
 export type RunDetail = { run: Run; tasks: TaskView[]; entries: Entry[]; exchanges: Exchange[] }
@@ -191,7 +200,12 @@ export const api = {
   inbox: () => call<{ tasks: TaskView[] }>('GET', '/api/inbox'),
   tasks: (mine = false) => call<{ tasks: TaskView[] }>('GET', `/api/tasks${mine ? '?mine=1' : ''}`),
   task: (id: string) => call<{ task: TaskView; activity: Entry[]; children: Link[] }>('GET', `/api/tasks/${id}`),
-  answer: (id: string, a: { text?: string; data?: Record<string, unknown>; decision?: 'reject' }) => call<void>('POST', `/api/tasks/${id}/answer`, a),
+  answer: (id: string, a: Answer) => call<void>('POST', `/api/tasks/${id}/answer`, a),
+  decision: (token: string) => call<Decision>('GET', `/api/decisions/${encodeURIComponent(token)}`),
+  answerDecision: (token: string, a: Answer) => call<void>('POST', `/api/decisions/${encodeURIComponent(token)}`, a),
+  notificationSettings: () => call<NotificationSettingsView>('GET', '/api/settings/notifications'),
+  setNotificationSettings: (s: NotificationSettings) => call<NotificationSettingsView>('PUT', '/api/settings/notifications', s),
+  testNotification: () => call<void>('POST', '/api/settings/notifications/test', {}),
   cancel: (id: string) => call<{ task: A2ATask }>('POST', `/api/tasks/${id}/cancel`, {}),
   send: (m: { to: string; text?: string; data?: Record<string, unknown>; taskId?: string; contextId?: string }) =>
     call<{ result: A2ATask | Message }>('POST', '/api/send', m),

@@ -37,6 +37,7 @@ import (
 	"github.com/three-agent-problem/lagrange/activity"
 	"github.com/three-agent-problem/lagrange/directory"
 	"github.com/three-agent-problem/lagrange/mailbox"
+	"github.com/three-agent-problem/lagrange/notify"
 	"github.com/three-agent-problem/lagrange/pg"
 	"github.com/three-agent-problem/lagrange/relay"
 	"github.com/three-agent-problem/lagrange/tunnel"
@@ -62,7 +63,9 @@ type Config struct {
 	Queue pg.WorkQueueConfig
 	// EventPoll is how often subscribers poll for task events (default 100ms).
 	EventPoll time.Duration
-	Logger    *slog.Logger
+	// Email sends notifications by email (notify.ParseSMTP). Nil: no email; Slack still works.
+	Email  notify.Email
+	Logger *slog.Logger
 }
 
 // Platform is a running server.
@@ -76,6 +79,7 @@ type Platform struct {
 	Mailbox   *mailbox.Mailbox
 	Tasks     *pg.TaskStore
 	Relay     *relay.Relay
+	Notify    *notify.Notifier
 	// A2A is the a2a-go request handler that serves every address.
 	A2A     a2asrv.RequestHandler
 	Tunnels *tunnel.Server
@@ -123,7 +127,8 @@ func New(ctx context.Context, cfg Config) (*Platform, error) {
 		}})
 	}
 	p.queue = pg.NewWorkQueueBackend(db, cfg.WorkerID, cfg.Queue)
-	p.Relay = &relay.Relay{Directory: p.Directory, Links: p.Links, Activity: p.Activity, Mailbox: p.Mailbox, Logger: log}
+	p.Notify = &notify.Notifier{Directory: p.Directory, PublicURL: cfg.PublicURL, Email: cfg.Email, Logger: log}
+	p.Relay = &relay.Relay{Directory: p.Directory, Links: p.Links, Activity: p.Activity, Mailbox: p.Mailbox, OnWaiting: p.Notify.Waiting, Logger: log}
 	handler := a2asrv.NewHandler(p.Relay,
 		a2asrv.WithClusterMode(a2asrv.ClusterConfig{
 			TaskStore:    p.Tasks,
@@ -181,6 +186,7 @@ func (p *Platform) PublicURL() string { return p.cfg.PublicURL }
 func (p *Platform) Close() {
 	p.closed.Do(func() {
 		p.queue.Close(5 * time.Second)
+		p.Notify.Wait()
 		p.stop()
 		p.sessions.closeAll()
 		p.DB.Close()

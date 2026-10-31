@@ -64,7 +64,18 @@ type Relay struct {
 	Mailbox   *mailbox.Mailbox
 	// Direct is the HTTP client for agents with a public endpoint.
 	Direct *http.Client
-	Logger *slog.Logger
+	// OnWaiting, if set, is called when a task stops on INPUT_REQUIRED or AUTH_REQUIRED.
+	OnWaiting func(ctx context.Context, w Waiting)
+	Logger    *slog.Logger
+}
+
+// Waiting is a task that just stopped to wait on someone.
+type Waiting struct {
+	// Entry is the task's activity entry: its state, sender, recipient and awaiting.
+	Entry *activity.Entry
+	// Question is what is asked: the agent's status message, or, for a task addressed
+	// to a person, the sender's message.
+	Question *a2a.Message
 }
 
 var _ a2asrv.AgentExecutor = (*Relay)(nil)
