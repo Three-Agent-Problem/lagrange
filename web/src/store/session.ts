@@ -1,8 +1,10 @@
 import { create } from 'zustand'
-import { api, ApiError, type Address, type User } from '@/lib/api'
+import { api, ApiError, type Address, type AuthMethods, type Identity, type User } from '@/lib/api'
 
 type SessionState = {
   user?: User
+  identities: Identity[]
+  auth?: AuthMethods
   publicUrl: string
   /** The server runs with LAGRANGE_DEV=1. */
   dev: boolean
@@ -23,11 +25,13 @@ export const useSession = create<SessionState>((set, get) => ({
   devSeed: false,
   ready: false,
   addresses: [],
+  identities: [],
   load: async () => {
     try {
       const me = await api.me()
-      set({ user: me.user, publicUrl: me.publicUrl, dev: !!me.dev, devSeed: !!me.devSeed, ready: true })
-      await get().refreshAddresses()
+      set({ user: me.user, identities: me.identities, auth: me.auth, publicUrl: me.publicUrl, dev: !!me.dev, devSeed: !!me.devSeed, ready: true })
+      // Until the email is confirmed, the rest of the API says no.
+      if (me.user.verified) await get().refreshAddresses()
     } catch (e) {
       if (e instanceof ApiError && e.status === 401) set({ user: undefined, ready: true })
       else throw e

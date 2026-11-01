@@ -43,7 +43,16 @@ export type AgentCard = {
   provider?: { organization: string; url: string }
 }
 
-export type User = { id: number; email: string; name: string; handle: string; admin: boolean }
+export type User = { id: number; email: string; name: string; handle: string; admin: boolean; verified: boolean; hasPassword: boolean }
+
+/** How people can sign in on this server. */
+export type AuthMethods = { signup: 'open' | 'invite'; email: boolean; providers: { name: string; label: string }[] }
+
+export type Identity = { provider: string; email: string; createdAt: string }
+
+export type Invite = { email: string; invitedBy: string; link?: string; emailed: boolean }
+
+export type Me = { user: User; identities: Identity[]; auth: AuthMethods; publicUrl: string; dev?: boolean; devSeed?: boolean }
 
 export type Stats = { sessions: number; capacity: number; inFlight: number; waiting: number }
 
@@ -217,13 +226,25 @@ async function call<T>(method: string, path: string, body?: unknown): Promise<T>
 }
 
 export const api = {
-  me: () => call<{ user: User; publicUrl: string; dev?: boolean; devSeed?: boolean }>('GET', '/api/me'),
+  me: () => call<Me>('GET', '/api/me'),
+  authMethods: () => call<AuthMethods>('GET', '/api/auth/methods'),
+  signup: (u: { email: string; name: string; handle: string; password: string }) => call<User>('POST', '/api/signup', u),
+  verify: (token: string) => call<User>('POST', '/api/auth/verify', { token }),
+  resendVerify: () => call<void>('POST', '/api/auth/verify/resend', {}),
+  /** Emails a login link; answers the same whether or not the email has an account. */
+  loginLink: (email: string) => call<void>('POST', '/api/login/link', { email }),
+  claimLoginLink: (token: string) => call<User>('POST', '/api/login/link/claim', { token }),
+  resetPassword: (email: string) => call<void>('POST', '/api/password/reset', { email }),
+  confirmReset: (token: string, password: string) => call<User>('POST', '/api/password/reset/confirm', { token, password }),
+  changePassword: (current: string, password: string) => call<void>('PUT', '/api/me/password', { current, password }),
+  createInvite: (email: string) => call<Invite>('POST', '/api/invites', { email }),
+  invite: (token: string) => call<Invite>('GET', `/api/invites/${encodeURIComponent(token)}`),
+  acceptInvite: (token: string, u: { name: string; handle: string; password: string }) => call<User>('POST', `/api/invites/${encodeURIComponent(token)}/accept`, u),
   /** Dev servers only (LAGRANGE_DEV=1): delete every agent and all traffic, keep people; with seed, run the seed again. */
   devReset: (seed: boolean) => call<void>('POST', '/api/dev/reset', { seed }),
   login: (email: string, password: string) => call<User>('POST', '/api/login', { email, password }),
   logout: () => call<void>('POST', '/api/logout', {}),
   users: () => call<{ users: User[] }>('GET', '/api/users'),
-  invite: (u: { email: string; name: string; handle: string; password: string }) => call<User>('POST', '/api/users', u),
   addresses: () => call<{ addresses: Address[] }>('GET', '/api/addresses'),
   createAddress: (a: { handle: string; displayName?: string; description?: string; endpoint?: string }) =>
     call<{ address: Address; token: string; command: string }>('POST', '/api/addresses', a),

@@ -1,13 +1,13 @@
 import { ExternalLink, MessageSquare, Search, UserPlus } from 'lucide-react'
 import { useEffect, useState, type FormEvent } from 'react'
 import { Link } from 'react-router'
-import { api } from '@/lib/api'
+import { api, type Invite } from '@/lib/api'
 import { cn } from '@/lib/cn'
 import { useView } from '@/store/live'
 import { useSession } from '@/store/session'
 import { Button } from '@/ui/AnswerForm'
 import { Avatar } from '@/ui/Avatar'
-import { Copy } from '@/ui/Copy'
+import { CodeLine, Copy } from '@/ui/Copy'
 
 /** Everyone on this server, people and agents, with their cards and skills. */
 export function Directory() {
@@ -37,11 +37,11 @@ export function Directory() {
           </div>
           {user?.admin && (
             <Button icon={<UserPlus size={14} />} onClick={() => setInviting(!inviting)}>
-              Add a person
+              Invite a person
             </Button>
           )}
         </header>
-        {inviting && <Invite onDone={() => (setInviting(false), void refreshAddresses())} />}
+        {inviting && <Invite />}
         <div className="flex flex-wrap items-center gap-2">
           <label className="flex min-w-[260px] flex-1 items-center gap-2">
             <Search size={15} className="text-muted" />
@@ -96,30 +96,45 @@ export function Directory() {
   )
 }
 
-function Invite({ onDone }: { onDone: () => void }) {
-  const [f, setF] = useState({ email: '', name: '', handle: '', password: '' })
+/** Invites someone by email: they open a one-time link, pick their handle and join. */
+function Invite() {
+  const [email, setEmail] = useState('')
   const [error, setError] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [sent, setSent] = useState<Invite>()
   const submit = async (e: FormEvent) => {
     e.preventDefault()
+    setBusy(true)
+    setError('')
     try {
-      await api.invite(f)
-      onDone()
+      setSent(await api.createInvite(email))
+      setEmail('')
     } catch (err) {
       setError((err as Error).message)
+    } finally {
+      setBusy(false)
     }
   }
   return (
-    <form onSubmit={submit} className="card grid gap-3 p-5 sm:grid-cols-4">
-      {(['name', 'handle', 'email', 'password'] as const).map((k) => (
-        <label key={k} className="flex flex-col gap-1 text-xs font-semibold text-muted capitalize">
-          {k}
-          <input className="input" type={k === 'password' ? 'password' : k === 'email' ? 'email' : 'text'} value={f[k]} onChange={(e) => setF({ ...f, [k]: e.target.value })} />
+    <div className="card space-y-3 p-5">
+      <form onSubmit={submit} className="flex flex-wrap items-end gap-3">
+        <label className="flex min-w-[240px] flex-1 flex-col gap-1 text-xs font-semibold text-muted">
+          Email
+          <input className="input" type="email" required placeholder="grace@example.com" value={email} onChange={(e) => setEmail(e.target.value)} autoFocus />
         </label>
-      ))}
-      {error && <p className="text-xs font-semibold text-bad sm:col-span-4">{error}</p>}
-      <div className="sm:col-span-4">
-        <Button type="submit">Create account</Button>
-      </div>
-    </form>
+        <Button type="submit" disabled={busy}>
+          Send invitation
+        </Button>
+      </form>
+      {error && <p className="text-xs font-semibold text-bad">{error}</p>}
+      {sent && (
+        <div className="space-y-1.5 text-xs">
+          <p className="font-semibold text-good">
+            {sent.emailed ? `Invitation emailed to ${sent.email}.` : `Send ${sent.email} this link (this server can’t send email).`} It works once, for 7 days.
+          </p>
+          {sent.link && <CodeLine text={sent.link} />}
+        </div>
+      )}
+    </div>
   )
 }

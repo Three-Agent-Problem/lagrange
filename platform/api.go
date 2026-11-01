@@ -28,9 +28,10 @@ import (
 )
 
 func (p *Platform) api(mux *http.ServeMux) {
-	mux.HandleFunc("POST /api/login", p.handleLogin)
+	mux.Handle("POST /api/login", p.public(p.handleLogin))
 	mux.HandleFunc("POST /api/logout", p.handleLogout)
-	mux.Handle("GET /api/me", p.authed(p.handleMe))
+	mux.Handle("GET /api/me", p.authedAny(p.handleMe))
+	p.accountRoutes(mux)
 	mux.Handle("GET /api/users", p.authed(p.handleUsers))
 	mux.Handle("POST /api/users", p.authed(p.handleCreateUser))
 	mux.Handle("GET /api/addresses", p.authed(p.handleAddresses))
@@ -70,14 +71,23 @@ func (p *Platform) api(mux *http.ServeMux) {
 
 type apiHandler func(w http.ResponseWriter, r *http.Request, me *directory.User)
 
-// authed requires a session. State-changing requests must be JSON, which a cross-site
-// form can't send without a CORS preflight; with the SameSite=Lax cookie that keeps the
-// API safe from CSRF.
-func (p *Platform) authed(h apiHandler) http.Handler {
+// authed requires a session of someone who confirmed their email. State-changing
+// requests must be JSON, which a cross-site form can't send without a CORS preflight;
+// with the SameSite=Lax cookie that keeps the API safe from CSRF.
+func (p *Platform) authed(h apiHandler) http.Handler { return p.session(h, true) }
+
+// authedAny is authed for people who haven't confirmed their email yet.
+func (p *Platform) authedAny(h apiHandler) http.Handler { return p.session(h, false) }
+
+func (p *Platform) session(h apiHandler, verified bool) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		me := p.sessionUser(r)
 		if me == nil {
 			apiError(w, http.StatusUnauthorized, "log in first")
+			return
+		}
+		if verified && !me.Verified {
+			apiError(w, http.StatusForbidden, "confirm your email first: open the link we sent you")
 			return
 		}
 		if r.Method != http.MethodGet && r.Method != http.MethodHead {
@@ -104,7 +114,7 @@ func (p *Platform) handleLogin(w http.ResponseWriter, r *http.Request) {
 		apiError(w, http.StatusBadRequest, "send {email, password}")
 		return
 	}
-	u, token, err := p.Directory.Login(r.Context(), strings.TrimSpace(body.Email), body.Password)
+	u, token, err := p.Directory.Login(r.Context(), body.Email, body.Password)
 	if errors.Is(err, directory.ErrBadCredentials) {
 		apiError(w, http.StatusUnauthorized, "wrong email or password")
 		return
@@ -113,10 +123,7 @@ func (p *Platform) handleLogin(w http.ResponseWriter, r *http.Request) {
 		apiError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	http.SetCookie(w, &http.Cookie{
-		Name: SessionCookie, Value: token, Path: "/", HttpOnly: true, SameSite: http.SameSiteLaxMode,
-		Secure: strings.HasPrefix(p.cfg.PublicURL, "https://"), MaxAge: int(directory.SessionTTL / time.Second),
-	})
+	p.setSession(w, token)
 	writeJSON(w, http.StatusOK, u)
 }
 
@@ -129,7 +136,15 @@ func (p *Platform) handleLogout(w http.ResponseWriter, r *http.Request) {
 }
 
 func (p *Platform) handleMe(w http.ResponseWriter, r *http.Request, me *directory.User) {
-	writeJSON(w, http.StatusOK, map[string]any{"user": me, "publicUrl": p.cfg.PublicURL, "dev": p.cfg.Dev, "devSeed": p.seed != nil})
+	identities, err := p.Directory.Identities(r.Context(), me.ID)
+	if err != nil {
+		apiError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"user": me, "identities": identities, "auth": p.authMethods(),
+		"publicUrl": p.cfg.PublicURL, "dev": p.cfg.Dev, "devSeed": p.seed != nil,
+	})
 }
 
 func (p *Platform) handleUsers(w http.ResponseWriter, r *http.Request, me *directory.User) {

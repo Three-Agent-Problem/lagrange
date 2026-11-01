@@ -106,6 +106,17 @@ func serve(ctx context.Context, args []string) error {
 		}
 		email = s
 	}
+	var providers []*platform.OAuthProvider
+	if id := os.Getenv("LAGRANGE_GITHUB_CLIENT_ID"); id != "" {
+		providers = append(providers, platform.GitHubProvider(id, os.Getenv("LAGRANGE_GITHUB_CLIENT_SECRET")))
+	}
+	if id := os.Getenv("LAGRANGE_GOOGLE_CLIENT_ID"); id != "" {
+		providers = append(providers, platform.GoogleProvider(id, os.Getenv("LAGRANGE_GOOGLE_CLIENT_SECRET")))
+	}
+	signup := env("LAGRANGE_SIGNUP", platform.SignupInvite)
+	if signup != platform.SignupInvite && signup != platform.SignupOpen {
+		return fmt.Errorf("LAGRANGE_SIGNUP is %q; use invite or open", signup)
+	}
 	p, err := platform.New(ctx, platform.Config{
 		DatabaseURL:      *dbURL,
 		PublicURL:        *publicURL,
@@ -119,6 +130,9 @@ func serve(ctx context.Context, args []string) error {
 		DevSeed:          os.Getenv("LAGRANGE_DEV_SEED"),
 		Web:              web.FS(),
 		Email:            email,
+		Signup:           signup,
+		OAuth:            providers,
+		TrustProxy:       os.Getenv("LAGRANGE_TRUST_PROXY") == "1",
 		Logger:           logger,
 	})
 	if err != nil {

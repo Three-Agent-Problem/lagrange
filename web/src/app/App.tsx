@@ -4,6 +4,8 @@ import { BrowserRouter, Navigate, Route, Routes, useParams } from 'react-router'
 import { Login } from '@/app/Login'
 import { savedTheme, Shell } from '@/app/Shell'
 import { Agents } from '@/features/agents/Agents'
+import { AuthLink, VerifyEmail } from '@/features/auth/AuthLink'
+import { authLinkOf } from '@/features/auth/handle'
 import { Decision } from '@/features/decision/Decision'
 import { Directory } from '@/features/directory/Directory'
 import { LiveGraph } from '@/features/graph/LiveGraph'
@@ -16,12 +18,15 @@ import { useSession } from '@/store/session'
 
 /** A decision link (/d/<token>) works without logging in: the token is the credential. */
 const decisionToken = /^\/d\/([^/]+)\/?$/.exec(location.pathname)?.[1]
+/** Emailed links (/auth/<purpose>/<token>): confirm email, log in, reset password, accept an invitation. */
+const authLink = authLinkOf(location.pathname)
 
 // Pages outside the shell (login, decision links) follow the theme too.
 document.documentElement.dataset.theme = savedTheme()
 
 export function App() {
   if (decisionToken) return <Decision token={decisionToken} />
+  if (authLink) return <AuthLink {...authLink} />
   return <LoggedIn />
 }
 
@@ -32,6 +37,7 @@ function LoggedIn() {
   }, [load])
   if (!ready) return null
   if (!user) return <Login />
+  if (!user.verified) return <VerifyEmail />
   return (
     <BrowserRouter>
       <Routes>

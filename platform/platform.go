@@ -74,8 +74,19 @@ type Config struct {
 	// EventPoll is how often subscribers poll for task events (default 100ms).
 	EventPoll time.Duration
 	// Email sends notifications by email (notify.ParseSMTP). Nil: no email; Slack still works.
-	Email  notify.Email
-	Logger *slog.Logger
+	// Without email, signups aren't verified and login links and password resets are off.
+	Email notify.Email
+	// Signup is SignupInvite (default: only invited people join) or SignupOpen.
+	Signup string
+	// OAuth providers people can log in with (GitHubProvider, GoogleProvider).
+	OAuth []*OAuthProvider
+	// TrustProxy: the server runs behind a reverse proxy, so the client address is the
+	// last X-Forwarded-For entry (for rate limits).
+	TrustProxy bool
+	// AuthRateLimit is how many login, signup and link requests a client may make per
+	// minute (default 30; negative: no limit).
+	AuthRateLimit int
+	Logger        *slog.Logger
 }
 
 // Platform is a running server.
@@ -95,6 +106,8 @@ type Platform struct {
 	Tunnels *tunnel.Server
 
 	sessions *sessionRegistry
+	limits   *limits
+	mail     sync.WaitGroup
 	seed     *seeder
 	queue    *pg.WorkQueue
 	handler  http.Handler
@@ -112,6 +125,12 @@ func New(ctx context.Context, cfg Config) (*Platform, error) {
 		return nil, errors.New("platform: PublicURL is required")
 	}
 	cfg.PublicURL = strings.TrimSuffix(cfg.PublicURL, "/")
+	for _, o := range cfg.OAuth {
+		o.Config.RedirectURL = cfg.PublicURL + "/api/auth/" + o.Name + "/callback"
+	}
+	if cfg.AuthRateLimit == 0 {
+		cfg.AuthRateLimit = 30
+	}
 	if cfg.WorkerID == "" {
 		cfg.WorkerID, _ = os.Hostname()
 	}
@@ -129,6 +148,7 @@ func New(ctx context.Context, cfg Config) (*Platform, error) {
 		Mailbox:   mailbox.New(),
 		Tasks:     pg.NewTaskStore(db),
 		sessions:  newSessionRegistry(),
+		limits:    &limits{perMinute: cfg.AuthRateLimit},
 	}
 	bg, stop := context.WithCancel(context.Background())
 	p.stop = stop
@@ -211,6 +231,7 @@ func (p *Platform) Close() {
 		p.seed.stop()
 		p.queue.Close(5 * time.Second)
 		p.Notify.Wait()
+		p.mail.Wait()
 		p.stop()
 		p.sessions.closeAll()
 		p.DB.Close()

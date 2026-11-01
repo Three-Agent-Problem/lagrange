@@ -16,6 +16,7 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"strings"
 	"sync"
 	"time"
 
@@ -41,6 +42,10 @@ var (
 	ErrInvalidHandle = errors.New("directory: a handle is 2-40 characters: lowercase letters, digits and dashes, starting with a letter or digit")
 	// ErrBadCredentials means the email or password is wrong.
 	ErrBadCredentials = errors.New("directory: wrong email or password")
+	// ErrShortPassword means the password has fewer than 8 characters.
+	ErrShortPassword = errors.New("directory: the password needs at least 8 characters")
+	// ErrInvalidEmail means the email has no @.
+	ErrInvalidEmail = errors.New("directory: that doesn't look like an email address")
 )
 
 // HandlePattern is what a handle must look like.
@@ -56,6 +61,10 @@ type User struct {
 	Name   string `json:"name"`
 	Handle string `json:"handle"`
 	Admin  bool   `json:"admin"`
+	// Verified means the person proved they own Email (or an admin vouched for them).
+	Verified bool `json:"verified"`
+	// HasPassword is false for people who log in only with links or a provider.
+	HasPassword bool `json:"hasPassword"`
 }
 
 // Address is an agent or a person that can receive tasks.
@@ -88,25 +97,61 @@ type Directory struct {
 // New returns a directory on db.
 func New(db *pg.DB) *Directory { return &Directory{db: db} }
 
-// CreateUser creates a person and their human address.
+// CreateUser creates a person and their human address. An admin vouches for the email,
+// so it counts as verified.
 func (d *Directory) CreateUser(ctx context.Context, email, name, handle, password string, admin bool) (*User, error) {
-	if !HandlePattern.MatchString(handle) {
+	return d.Register(ctx, Registration{Email: email, Name: name, Handle: handle, Password: password, Admin: admin, Verified: true})
+}
+
+// Registration is a new person.
+type Registration struct {
+	Email, Name, Handle string
+	// Password may be empty when the person logs in with a provider (Provider is set).
+	Password string
+	Admin    bool
+	// Verified marks the email as proven: by an admin, an invitation link or a provider.
+	Verified bool
+	// Provider and Subject link an OAuth account at the same time.
+	Provider, Subject string
+}
+
+// Register creates a person, their human address and, with Provider, their identity.
+func (d *Directory) Register(ctx context.Context, r Registration) (*User, error) {
+	r.Email = NormalizeEmail(r.Email)
+	if !HandlePattern.MatchString(r.Handle) {
 		return nil, ErrInvalidHandle
 	}
-	if len(password) < 8 {
-		return nil, errors.New("directory: the password needs at least 8 characters")
+	if !strings.Contains(r.Email, "@") {
+		return nil, ErrInvalidEmail
 	}
-	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
-	if err != nil {
-		return nil, err
+	if r.Name = strings.TrimSpace(r.Name); r.Name == "" {
+		r.Name = r.Handle
 	}
-	u := &User{Email: email, Name: name, Handle: handle, Admin: admin}
-	err = pgx.BeginFunc(ctx, d.db.Pool, func(tx pgx.Tx) error {
-		if err := tx.QueryRow(ctx, `INSERT INTO users (email, name, handle, password_hash, admin) VALUES ($1, $2, $3, $4, $5) RETURNING id`,
-			email, name, handle, string(hash), admin).Scan(&u.ID); err != nil {
+	var hash *string
+	if r.Password != "" || r.Provider == "" {
+		h, err := hashPassword(r.Password)
+		if err != nil {
+			return nil, err
+		}
+		hash = &h
+	}
+	var verified *time.Time
+	if r.Verified {
+		now := time.Now()
+		verified = &now
+	}
+	u := &User{Email: r.Email, Name: r.Name, Handle: r.Handle, Admin: r.Admin, Verified: r.Verified, HasPassword: hash != nil}
+	err := pgx.BeginFunc(ctx, d.db.Pool, func(tx pgx.Tx) error {
+		if err := tx.QueryRow(ctx, `INSERT INTO users (email, name, handle, password_hash, admin, email_verified_at) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
+			r.Email, r.Name, r.Handle, hash, r.Admin, verified).Scan(&u.ID); err != nil {
 			return err
 		}
-		_, err := tx.Exec(ctx, `INSERT INTO addresses (handle, kind, owner_id, display_name) VALUES ($1, 'human', $2, $3)`, handle, u.ID, name)
+		if r.Provider != "" {
+			if _, err := tx.Exec(ctx, `INSERT INTO identities (provider, subject, user_id, email) VALUES ($1, $2, $3, $4)`, r.Provider, r.Subject, u.ID, r.Email); err != nil {
+				return err
+			}
+		}
+		_, err := tx.Exec(ctx, `INSERT INTO addresses (handle, kind, owner_id, display_name) VALUES ($1, 'human', $2, $3)`, r.Handle, u.ID, r.Name)
 		return err
 	})
 	if pg.IsUniqueViolation(err) {
@@ -118,9 +163,20 @@ func (d *Directory) CreateUser(ctx context.Context, email, name, handle, passwor
 	return u, nil
 }
 
+// NormalizeEmail trims and lowercases an email, so lookups don't depend on case.
+func NormalizeEmail(email string) string { return strings.ToLower(strings.TrimSpace(email)) }
+
+func hashPassword(password string) (string, error) {
+	if len(password) < 8 {
+		return "", ErrShortPassword
+	}
+	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	return string(hash), err
+}
+
 // EnsureAdmin creates the admin user unless a user with that email exists.
 func (d *Directory) EnsureAdmin(ctx context.Context, email, name, handle, password string) (*User, error) {
-	if u, err := d.userWhere(ctx, "email = $1", email); err == nil {
+	if u, err := d.userWhere(ctx, "email = $1", NormalizeEmail(email)); err == nil {
 		return u, nil
 	}
 	return d.CreateUser(ctx, email, name, handle, password, true)
@@ -128,10 +184,10 @@ func (d *Directory) EnsureAdmin(ctx context.Context, email, name, handle, passwo
 
 // Login checks the password and starts a session. It returns the session token.
 func (d *Directory) Login(ctx context.Context, email, password string) (*User, string, error) {
-	var hash string
+	var hash *string
 	var id int64
-	err := d.db.Pool.QueryRow(ctx, `SELECT id, password_hash FROM users WHERE email = $1`, email).Scan(&id, &hash)
-	if errors.Is(err, pgx.ErrNoRows) {
+	err := d.db.Pool.QueryRow(ctx, `SELECT id, password_hash FROM users WHERE email = $1`, NormalizeEmail(email)).Scan(&id, &hash)
+	if errors.Is(err, pgx.ErrNoRows) || err == nil && hash == nil {
 		// Spend the same time as a real check so the response doesn't reveal the email.
 		_ = bcrypt.CompareHashAndPassword(dummyHash(), []byte(password))
 		return nil, "", ErrBadCredentials
@@ -139,15 +195,20 @@ func (d *Directory) Login(ctx context.Context, email, password string) (*User, s
 	if err != nil {
 		return nil, "", err
 	}
-	if bcrypt.CompareHashAndPassword([]byte(hash), []byte(password)) != nil {
+	if bcrypt.CompareHashAndPassword([]byte(*hash), []byte(password)) != nil {
 		return nil, "", ErrBadCredentials
 	}
+	return d.StartSession(ctx, id)
+}
+
+// StartSession starts a web session for a user and returns the session token.
+func (d *Directory) StartSession(ctx context.Context, userID int64) (*User, string, error) {
 	token := newSecret("lgs_")
 	if _, err := d.db.Pool.Exec(ctx, `INSERT INTO sessions (token_hash, user_id, expires_at) VALUES ($1, $2, $3)`,
-		hashToken(token), id, time.Now().Add(SessionTTL)); err != nil {
+		hashToken(token), userID, time.Now().Add(SessionTTL)); err != nil {
 		return nil, "", err
 	}
-	u, err := d.userWhere(ctx, "id = $1", id)
+	u, err := d.userWhere(ctx, "id = $1", userID)
 	return u, token, err
 }
 
@@ -170,16 +231,20 @@ func (d *Directory) Logout(ctx context.Context, token string) error {
 	return err
 }
 
+const userColumns = `id, email, name, handle, admin, email_verified_at IS NOT NULL, password_hash IS NOT NULL`
+
+func scanUser(row pgx.Row) (*User, error) {
+	var u User
+	return &u, row.Scan(&u.ID, &u.Email, &u.Name, &u.Handle, &u.Admin, &u.Verified, &u.HasPassword)
+}
+
 // Users lists everyone.
 func (d *Directory) Users(ctx context.Context) ([]*User, error) {
-	rows, err := d.db.Pool.Query(ctx, `SELECT id, email, name, handle, admin FROM users ORDER BY id`)
+	rows, err := d.db.Pool.Query(ctx, `SELECT `+userColumns+` FROM users ORDER BY id`)
 	if err != nil {
 		return nil, err
 	}
-	return pgx.CollectRows(rows, func(row pgx.CollectableRow) (*User, error) {
-		var u User
-		return &u, row.Scan(&u.ID, &u.Email, &u.Name, &u.Handle, &u.Admin)
-	})
+	return pgx.CollectRows(rows, func(row pgx.CollectableRow) (*User, error) { return scanUser(row) })
 }
 
 // UserByHandle returns the person whose address is handle.
@@ -188,13 +253,11 @@ func (d *Directory) UserByHandle(ctx context.Context, handle string) (*User, err
 }
 
 func (d *Directory) userWhere(ctx context.Context, cond string, arg any) (*User, error) {
-	var u User
-	err := d.db.Pool.QueryRow(ctx, `SELECT id, email, name, handle, admin FROM users WHERE `+cond, arg).
-		Scan(&u.ID, &u.Email, &u.Name, &u.Handle, &u.Admin)
+	u, err := scanUser(d.db.Pool.QueryRow(ctx, `SELECT `+userColumns+` FROM users WHERE `+cond, arg))
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrNotFound
 	}
-	return &u, err
+	return u, err
 }
 
 // CreateAgent creates an agent address owned by ownerID.

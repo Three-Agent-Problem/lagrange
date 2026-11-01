@@ -147,13 +147,18 @@ func TestDecisionLinkSender(t *testing.T) {
 	if mail.subject != "@shop needs your answer" || !strings.Contains(mail.body, "Which size?") {
 		t.Fatalf("mail = %+v", mail)
 	}
-	anon(t, e, http.MethodPost, "/api/decisions/"+linkToken(t, mail.body), "application/json", `{"text":"L"}`, http.StatusAccepted, nil)
 	var full struct {
 		Task struct {
 			State string    `json:"state"`
 			Task  *a2a.Task `json:"task"`
 		} `json:"task"`
 	}
+	// The email can go out before the store has the waiting state (relay.Waiting).
+	waitFor(t, "the question", func() bool {
+		ada.do(http.MethodGet, "/api/tasks/"+sent.Result.ID, nil, http.StatusOK, &full)
+		return full.Task.State == string(a2a.TaskStateInputRequired)
+	})
+	anon(t, e, http.MethodPost, "/api/decisions/"+linkToken(t, mail.body), "application/json", `{"text":"L"}`, http.StatusAccepted, nil)
 	waitFor(t, "the order", func() bool {
 		ada.do(http.MethodGet, "/api/tasks/"+sent.Result.ID, nil, http.StatusOK, &full)
 		return full.Task.State == string(a2a.TaskStateCompleted)

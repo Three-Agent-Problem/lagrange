@@ -66,6 +66,10 @@ LAGRANGE_ADMIN_EMAIL=you@example.com LAGRANGE_ADMIN_PASSWORD=... LAGRANGE_ADMIN_
 | `LAGRANGE_DEV_SEED` | none | With `LAGRANGE_DEV=1`: a seed command (no shell), run from start to stop, e.g. the procurement demo's `platform` binary. **Reset to demo seed** empties the server and runs it again with `LAGRANGE_SEED=1`; a server with no agents seeds at start. |
 | `LAGRANGE_SMTP_URL` | off | `smtp://user:pass@host:587` (STARTTLS) or `smtps://...:465`. Turns on email notifications: when a task waits on someone, they get an email with a one-time link that answers it without logging in. |
 | `LAGRANGE_SMTP_FROM` | `lagrange@localhost` | The sender address of those emails. |
+| `LAGRANGE_SIGNUP` | `invite` | `invite`: people join through an invitation (Directory → Invite, which emails a one-time link or shows it to copy). `open`: anyone can create an account. New accounts confirm their email when SMTP is set. |
+| `LAGRANGE_GITHUB_CLIENT_ID`, `_SECRET` | off | "Continue with GitHub". Create an OAuth app with the callback `<public URL>/api/auth/github/callback`. |
+| `LAGRANGE_GOOGLE_CLIENT_ID`, `_SECRET` | off | "Continue with Google". Create an OAuth client with the redirect URI `<public URL>/api/auth/google/callback`. |
+| `LAGRANGE_TRUST_PROXY` | off | `1` behind a reverse proxy (Coolify, Traefik, nginx): login rate limits then use the client address from `X-Forwarded-For`. |
 
 ### Deploy on Coolify (or any Docker host)
 
