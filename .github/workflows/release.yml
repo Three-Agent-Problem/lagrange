@@ -1,11 +1,15 @@
 # On a version tag: binaries and archives on the GitHub release, the image on ghcr.io, and
 # the cask in Three-Agent-Problem/homebrew-tap (needs the TAP_GITHUB_TOKEN secret: a
 # fine-grained token with Contents read and write on that repo only).
+#
+# Run it by hand (Actions -> Release -> Run workflow) to check the setup without
+# releasing: it stops after the checks.
 name: Release
 
 on:
   push:
     tags: ["v*"]
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -15,6 +19,16 @@ jobs:
   release:
     runs-on: ubuntu-latest
     steps:
+      # Fail before anything is published if the tap can't be updated (a missing or
+      # expired TAP_GITHUB_TOKEN); --dry-run checks write access without pushing.
+      - name: Check the Homebrew tap token
+        env:
+          TAP_GITHUB_TOKEN: ${{ secrets.TAP_GITHUB_TOKEN }}
+        run: |
+          test -n "$TAP_GITHUB_TOKEN" || { echo "::error::The TAP_GITHUB_TOKEN secret is missing"; exit 1; }
+          git clone --quiet --depth 1 "https://x-access-token:${TAP_GITHUB_TOKEN}@github.com/Three-Agent-Problem/homebrew-tap.git" tap
+          git -C tap push --dry-run origin HEAD:refs/heads/main
+          rm -rf tap
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
@@ -34,6 +48,7 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
       - uses: goreleaser/goreleaser-action@v7
+        if: github.ref_type == 'tag'
         with:
           version: "~> v2"
           args: release --clean
