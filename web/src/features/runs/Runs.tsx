@@ -143,6 +143,7 @@ export function Runs() {
                   <span className="text-[10.5px] text-muted">
                     {r.tasks > 1 ? `${r.tasks} tasks · ` : ''}
                     {r.entries} events
+                    {r.hidden ? <span title="Tasks inside other workspaces, which this one doesn't see"> · +{r.hidden} elsewhere</span> : null}
                   </span>
                   {user && r.waiting.includes(user.handle) && <span className="ml-auto rounded-full bg-warn-soft px-1.5 py-0.5 text-[10px] font-bold text-warn">needs you</span>}
                 </div>
@@ -299,6 +300,11 @@ function RunView({ id, kind, name, onArchived }: { id: string; kind: (h: string)
               {name(run.starter)} → {name(run.recipient)} · {new Date(start).toLocaleString()} · took {duration(split?.segments.length ? split.end - split.start : end - start)} · {steps.length} steps · {data.exchanges.length} HTTP exchanges
               {run.waiting.length > 0 && <b className="text-warn"> · waiting for {run.waiting.map(name).join(', ')}</b>}
             </p>
+            {!!run.hidden && (
+              <p className="mt-0.5 text-[11px] text-muted">
+                {run.hidden} {run.hidden === 1 ? 'task' : 'tasks'} of this run happened inside other workspaces: you see the calls between you, not their own work.
+              </p>
+            )}
             {split && <TimeBar split={split} name={name} />}
           </div>
           <button

@@ -85,6 +85,17 @@ func (l *Log) Since(ctx context.Context, seq int64, limit int) ([]*Entry, error)
 	return l.query(ctx, `WHERE seq > $1 ORDER BY seq LIMIT $2`, seq, limit)
 }
 
+// involving is the condition for entries from or to one of the handles in $n, and
+// address changes that name no address (a reset).
+func involving(n string) string {
+	return `(sender = ANY(` + n + `) OR recipient = ANY(` + n + `) OR (kind = 'address' AND recipient = ''))`
+}
+
+// SinceFor is Since for the entries from or to one of handles.
+func (l *Log) SinceFor(ctx context.Context, seq int64, limit int, handles []string) ([]*Entry, error) {
+	return l.query(ctx, `WHERE seq > $1 AND `+involving("$3")+` ORDER BY seq LIMIT $2`, seq, limit, handles)
+}
+
 // Task returns every entry of a task, oldest first.
 func (l *Log) Task(ctx context.Context, taskID string) ([]*Entry, error) {
 	return l.query(ctx, `WHERE task_id = $1 ORDER BY seq`, taskID)
@@ -105,9 +116,10 @@ func (l *Log) Get(ctx context.Context, seq int64) (*Entry, error) {
 	return entries[0], nil
 }
 
-// Messages returns the newest plain message exchanges that weren't made from a task.
-func (l *Log) Messages(ctx context.Context, limit int) ([]*Entry, error) {
-	return l.query(ctx, `WHERE kind = 'message' AND parent_task_id = '' ORDER BY seq DESC LIMIT $1`, limit)
+// Messages returns the newest plain message exchanges from or to one of handles that
+// weren't made from a task.
+func (l *Log) Messages(ctx context.Context, handles []string, limit int) ([]*Entry, error) {
+	return l.query(ctx, `WHERE kind = 'message' AND parent_task_id = '' AND `+involving("$2")+` ORDER BY seq DESC LIMIT $1`, limit, handles)
 }
 
 // Between returns the newest plain message exchanges between two addresses, either way
@@ -147,10 +159,14 @@ func (l *Log) query(ctx context.Context, where string, args ...any) ([]*Entry, e
 	})
 }
 
+// Filter decides which entries a reader sees.
+type Filter func(*Entry) bool
+
 // Stream serves the log as Server-Sent Events, starting after ?since=<seq> or the
 // Last-Event-ID header (so browsers resume where they left off), or at the end of the
-// log when neither is given. Each event's id is its seq.
-func (l *Log) Stream(w http.ResponseWriter, r *http.Request) {
+// log when neither is given. Each event's id is its seq. Only entries keep accepts are
+// sent; keep may be nil.
+func (l *Log) Stream(w http.ResponseWriter, r *http.Request, keep Filter) {
 	flusher, ok := w.(http.Flusher)
 	if !ok {
 		http.Error(w, "streaming unsupported", http.StatusInternalServerError)
@@ -187,9 +203,12 @@ func (l *Log) Stream(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			for _, e := range entries {
+				cursor = e.Seq
+				if keep != nil && !keep(e) {
+					continue
+				}
 				raw, _ := json.Marshal(e)
 				fmt.Fprintf(w, "id: %d\nevent: activity\ndata: %s\n\n", e.Seq, raw)
-				cursor = e.Seq
 			}
 			flusher.Flush()
 			if len(entries) < 500 {

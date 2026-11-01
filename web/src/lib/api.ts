@@ -50,9 +50,17 @@ export type AuthMethods = { signup: 'open' | 'invite'; email: boolean; providers
 
 export type Identity = { provider: string; email: string; createdAt: string }
 
-export type Invite = { email: string; invitedBy: string; link?: string; emailed: boolean }
+export type Role = 'owner' | 'admin' | 'member' | 'viewer'
 
-export type Me = { user: User; identities: Identity[]; auth: AuthMethods; publicUrl: string; dev?: boolean; devSeed?: boolean }
+/** A team: its agents and its members. role is yours in it. */
+export type Workspace = { id: number; slug: string; name: string; role: Role }
+
+export type Member = User & { role: Role; joinedAt: string }
+
+/** An invitation into a workspace. existing: the email has an account, so they log in to join. */
+export type Invite = { email: string; invitedBy: string; workspace: string; role: Role; existing: boolean; link?: string; emailed: boolean }
+
+export type Me = { user: User; identities: Identity[]; workspaces: Workspace[]; auth: AuthMethods; publicUrl: string; dev?: boolean; devSeed?: boolean }
 
 export type Stats = { sessions: number; capacity: number; inFlight: number; waiting: number }
 
@@ -68,6 +76,8 @@ export type Address = {
   card: AgentCard
   cardUrl: string
   online: boolean
+  /** In another workspace: shown because it talked to this one. */
+  external?: boolean
   stats: Stats
   sessions: Session[]
   createdAt: string
@@ -186,6 +196,8 @@ export type Run = {
   waitingSince?: string
   /** Hidden from the runs list. */
   archived?: boolean
+  /** Tasks of the run inside other workspaces, which this one doesn't see. */
+  hidden?: number
 }
 
 export type Answer = { text?: string; data?: Record<string, unknown>; decision?: 'reject' }
@@ -211,11 +223,26 @@ export class ApiError extends Error {
   }
 }
 
+let workspace = ''
+
+/** Every call from now on acts in workspace slug (the Lagrange-Workspace header). */
+export function actIn(slug: string) {
+  workspace = slug
+}
+
+/** The event stream URL; EventSource can't send headers, so the workspace goes in the query. */
+export function eventsURL(since: number): string {
+  return `/api/events?since=${since}${workspace ? `&workspace=${encodeURIComponent(workspace)}` : ''}`
+}
+
 async function call<T>(method: string, path: string, body?: unknown): Promise<T> {
+  const headers: Record<string, string> = {}
+  if (body !== undefined) headers['Content-Type'] = 'application/json'
+  if (workspace) headers['Lagrange-Workspace'] = workspace
   const res = await fetch(path, {
     method,
     credentials: 'same-origin',
-    headers: body === undefined ? undefined : { 'Content-Type': 'application/json' },
+    headers,
     body: body === undefined ? undefined : JSON.stringify(body),
   })
   if (res.status === 204 || res.status === 202) return undefined as T
@@ -237,9 +264,17 @@ export const api = {
   resetPassword: (email: string) => call<void>('POST', '/api/password/reset', { email }),
   confirmReset: (token: string, password: string) => call<User>('POST', '/api/password/reset/confirm', { token, password }),
   changePassword: (current: string, password: string) => call<void>('PUT', '/api/me/password', { current, password }),
-  createInvite: (email: string) => call<Invite>('POST', '/api/invites', { email }),
+  createInvite: (email: string, role: Role) => call<Invite>('POST', '/api/invites', { email, role }),
   invite: (token: string) => call<Invite>('GET', `/api/invites/${encodeURIComponent(token)}`),
-  acceptInvite: (token: string, u: { name: string; handle: string; password: string }) => call<User>('POST', `/api/invites/${encodeURIComponent(token)}/accept`, u),
+  /** Without u, joins with the account you are logged in as (the invited email's). */
+  acceptInvite: (token: string, u: { name: string; handle: string; password: string } | Record<string, never> = {}) =>
+    call<User>('POST', `/api/invites/${encodeURIComponent(token)}/accept`, u),
+  workspaces: () => call<{ workspaces: Workspace[] }>('GET', '/api/workspaces'),
+  createWorkspace: (name: string) => call<{ workspace: Workspace }>('POST', '/api/workspaces', { name }),
+  renameWorkspace: (name: string) => call<{ workspace: Workspace }>('PUT', '/api/workspace', { name }),
+  members: () => call<{ members: Member[]; workspace: Workspace }>('GET', '/api/workspace/members'),
+  setRole: (userId: number, role: Role) => call<void>('PUT', `/api/workspace/members/${userId}`, { role }),
+  removeMember: (userId: number) => call<void>('DELETE', `/api/workspace/members/${userId}`, {}),
   /** Dev servers only (LAGRANGE_DEV=1): delete every agent and all traffic, keep people; with seed, run the seed again. */
   devReset: (seed: boolean) => call<void>('POST', '/api/dev/reset', { seed }),
   login: (email: string, password: string) => call<User>('POST', '/api/login', { email, password }),

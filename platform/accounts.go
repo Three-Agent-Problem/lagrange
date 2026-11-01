@@ -40,7 +40,7 @@ func (p *Platform) accountRoutes(mux *http.ServeMux) {
 	mux.Handle("POST /api/password/reset", p.public(p.handleResetRequest))
 	mux.Handle("POST /api/password/reset/confirm", p.public(p.handleResetConfirm))
 	mux.Handle("PUT /api/me/password", p.authed(p.handleChangePassword))
-	mux.Handle("POST /api/invites", p.authed(p.handleCreateInvite))
+	mux.Handle("POST /api/invites", p.in(directory.RoleAdmin, p.handleCreateInvite))
 	mux.HandleFunc("GET /api/invites/{token}", p.handleInvite)
 	mux.Handle("POST /api/invites/{token}/accept", p.public(p.handleAcceptInvite))
 	mux.HandleFunc("GET /api/auth/{provider}/start", p.handleOAuthStart)
@@ -354,36 +354,50 @@ func (p *Platform) handleChangePassword(w http.ResponseWriter, r *http.Request, 
 type InviteView struct {
 	Email     string `json:"email"`
 	InvitedBy string `json:"invitedBy"`
+	Workspace string `json:"workspace"`
+	Role      string `json:"role"`
+	// Existing means the email already has an account: they log in to join.
+	Existing bool `json:"existing"`
 	// Link is returned to whoever created the invitation, to share it themselves.
 	Link string `json:"link,omitempty"`
 	// Emailed says the server sent the link by email.
 	Emailed bool `json:"emailed"`
 }
 
-func (p *Platform) handleCreateInvite(w http.ResponseWriter, r *http.Request, me *directory.User) {
-	if !me.Admin {
-		apiError(w, http.StatusForbidden, "only admins can invite people")
+// handleCreateInvite invites someone into the workspace with a role (member unless
+// said). People who already have an account join by logging in and opening the link.
+func (p *Platform) handleCreateInvite(w http.ResponseWriter, r *http.Request, me *directory.User, s *scope) {
+	var body struct{ Email, Role string }
+	if err := decode(r, &body); err != nil || !strings.Contains(body.Email, "@") {
+		apiError(w, http.StatusBadRequest, "send {email, role}")
 		return
 	}
-	var body emailBody
-	if err := decode(r, &body); err != nil || !strings.Contains(body.Email, "@") {
-		apiError(w, http.StatusBadRequest, "send {email}")
+	role, ok := p.grantable(w, s, body.Role)
+	if !ok {
 		return
 	}
 	email := directory.NormalizeEmail(body.Email)
-	if _, err := p.Directory.UserByEmail(r.Context(), email); err == nil {
-		apiError(w, http.StatusConflict, "someone with that email is already here")
-		return
+	existing := false
+	if u, err := p.Directory.UserByEmail(r.Context(), email); err == nil {
+		if _, err := p.Directory.Membership(r.Context(), u.ID, s.Slug); err == nil {
+			apiError(w, http.StatusConflict, "@"+u.Handle+" is already in "+s.Name)
+			return
+		}
+		existing = true
 	}
-	link := p.mailLink(r.Context(), directory.AuthLink{Purpose: directory.LinkInvite, Email: email, InvitedBy: me.ID}, inviteTTL,
-		me.Name+" invited you to Lagrange", func(link string) string {
-			return fmt.Sprintf("%s (@%s) invited you to Lagrange, where agents and people work together.\n\nPick your handle and join:\n%s\n\nThe link works once and expires in 7 days.\n", me.Name, me.Handle, link)
+	link := p.mailLink(r.Context(), directory.AuthLink{Purpose: directory.LinkInvite, Email: email, InvitedBy: me.ID, WorkspaceID: s.ID, Role: role}, inviteTTL,
+		me.Name+" invited you to "+s.Name+" on Lagrange", func(link string) string {
+			next := "Pick your handle and join"
+			if existing {
+				next = "Log in as " + email + " and join"
+			}
+			return fmt.Sprintf("%s (@%s) invited you to %s on Lagrange, where agents and people work together.\n\n%s:\n%s\n\nThe link works once and expires in 7 days.\n", me.Name, me.Handle, s.Name, next, link)
 		})
 	if link == "" {
 		apiError(w, http.StatusTooManyRequests, "too many invitations to that address; try again later")
 		return
 	}
-	writeJSON(w, http.StatusCreated, InviteView{Email: email, InvitedBy: me.Name, Link: link, Emailed: p.cfg.Email != nil})
+	writeJSON(w, http.StatusCreated, InviteView{Email: email, InvitedBy: me.Name, Workspace: s.Name, Role: role, Existing: existing, Link: link, Emailed: p.cfg.Email != nil})
 }
 
 func (p *Platform) handleInvite(w http.ResponseWriter, r *http.Request) {
@@ -396,7 +410,38 @@ func (p *Platform) handleInvite(w http.ResponseWriter, r *http.Request) {
 	if by, err := p.Directory.UserByID(r.Context(), l.InvitedBy); err == nil {
 		v.InvitedBy = by.Name
 	}
+	if ws, role, err := p.inviteTarget(r.Context(), l); err == nil {
+		v.Workspace, v.Role = ws.Name, role
+	}
+	_, err = p.Directory.UserByEmail(r.Context(), l.Email)
+	v.Existing = err == nil
 	writeJSON(w, http.StatusOK, v)
+}
+
+// inviteTarget is the workspace and role an invitation joins. Invitations from before
+// workspaces join the default one.
+func (p *Platform) inviteTarget(ctx context.Context, l *directory.AuthLink) (*directory.Workspace, string, error) {
+	if l.WorkspaceID == 0 {
+		ws, err := p.Directory.Default(ctx)
+		return ws, directory.RoleMember, err
+	}
+	ws, err := p.Directory.WorkspaceByID(ctx, l.WorkspaceID)
+	return ws, firstNonEmpty(l.Role, directory.RoleMember), err
+}
+
+// join adds someone who already has an account to the workspace of an invitation. The
+// link went to their email, so it proves the address too.
+func (p *Platform) join(ctx context.Context, l *directory.AuthLink, u *directory.User) error {
+	ws, role, err := p.inviteTarget(ctx, l)
+	if err != nil {
+		return err
+	}
+	if err := p.Directory.AddMember(ctx, ws.ID, u.ID, role); err != nil && !errors.Is(err, directory.ErrTaken) {
+		return err
+	}
+	_ = p.Directory.MarkVerified(ctx, u.ID)
+	p.addressChanged(ctx, u.Handle)
+	return nil
 }
 
 func (p *Platform) handleAcceptInvite(w http.ResponseWriter, r *http.Request) {
@@ -405,22 +450,44 @@ func (p *Platform) handleAcceptInvite(w http.ResponseWriter, r *http.Request) {
 		apiError(w, http.StatusBadRequest, "send {name, handle, password}")
 		return
 	}
-	token := r.PathValue("token")
-	l, err := p.Directory.ClaimAuthLink(r.Context(), token, directory.LinkInvite)
+	ctx, token := r.Context(), r.PathValue("token")
+	l, err := p.Directory.ClaimAuthLink(ctx, token, directory.LinkInvite)
 	if err != nil {
 		apiError(w, http.StatusGone, "this invitation doesn't work any more; ask for a new one")
 		return
 	}
+	release := func() { _ = p.Directory.ReleaseAuthLink(context.WithoutCancel(ctx), token) }
+	if existing, err := p.Directory.UserByEmail(ctx, l.Email); err == nil {
+		// An account already: only its owner, logged in, may join with it.
+		if me := p.sessionUser(r); me == nil || me.ID != existing.ID {
+			release()
+			apiError(w, http.StatusConflict, "log in as "+l.Email+" first, then open the invitation again")
+			return
+		}
+		if err := p.join(ctx, l, existing); err != nil {
+			release()
+			apiError(w, statusOf(err), userMessage(err))
+			return
+		}
+		writeJSON(w, http.StatusOK, existing)
+		return
+	}
+	ws, role, err := p.inviteTarget(ctx, l)
+	if err != nil {
+		release()
+		apiError(w, http.StatusGone, "the workspace of this invitation is gone")
+		return
+	}
 	// The link went to this email, so opening it proves the address.
-	u, err := p.Directory.Register(r.Context(), directory.Registration{
-		Email: l.Email, Name: body.Name, Handle: body.Handle, Password: body.Password, Verified: true,
+	u, err := p.Directory.Register(ctx, directory.Registration{
+		Email: l.Email, Name: body.Name, Handle: body.Handle, Password: body.Password, Verified: true, Workspace: ws.ID, Role: role,
 	})
 	if err != nil {
-		_ = p.Directory.ReleaseAuthLink(r.Context(), token)
+		release()
 		apiError(w, statusOf(err), userMessage(err))
 		return
 	}
-	p.addressChanged(r.Context(), u.Handle)
+	p.addressChanged(ctx, u.Handle)
 	p.login(w, r, u.ID)
 }
 

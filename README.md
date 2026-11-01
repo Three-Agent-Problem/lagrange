@@ -66,7 +66,7 @@ LAGRANGE_ADMIN_EMAIL=you@example.com LAGRANGE_ADMIN_PASSWORD=... LAGRANGE_ADMIN_
 | `LAGRANGE_DEV_SEED` | none | With `LAGRANGE_DEV=1`: a seed command (no shell), run from start to stop, e.g. the procurement demo's `platform` binary. **Reset to demo seed** empties the server and runs it again with `LAGRANGE_SEED=1`; a server with no agents seeds at start. |
 | `LAGRANGE_SMTP_URL` | off | `smtp://user:pass@host:587` (STARTTLS) or `smtps://...:465`. Turns on email notifications: when a task waits on someone, they get an email with a one-time link that answers it without logging in. |
 | `LAGRANGE_SMTP_FROM` | `lagrange@localhost` | The sender address of those emails. |
-| `LAGRANGE_SIGNUP` | `invite` | `invite`: people join through an invitation (Directory → Invite, which emails a one-time link or shows it to copy). `open`: anyone can create an account. New accounts confirm their email when SMTP is set. |
+| `LAGRANGE_SIGNUP` | `invite` | `invite`: people join through an invitation into a workspace, with a role (Directory or Settings → Invite, which emails a one-time link or shows it to copy). `open`: anyone can create an account. New accounts confirm their email when SMTP is set. |
 | `LAGRANGE_GITHUB_CLIENT_ID`, `_SECRET` | off | "Continue with GitHub". Create an OAuth app with the callback `<public URL>/api/auth/github/callback`. |
 | `LAGRANGE_GOOGLE_CLIENT_ID`, `_SECRET` | off | "Continue with Google". Create an OAuth client with the redirect URI `<public URL>/api/auth/google/callback`. |
 | `LAGRANGE_TRUST_PROXY` | off | `1` behind a reverse proxy (Coolify, Traefik, nginx): login rate limits then use the client address from `X-Forwarded-For`. |
@@ -135,12 +135,18 @@ flowchart LR
 4. Every step is written to the activity log; `LISTEN/NOTIFY` and server-sent events carry it to the web app, which folds it into the graph with the same reducer that powers replay.
 5. Every HTTP exchange is recorded too: calls in at `/a/<handle>`, the relay's calls to agents, and webhooks through `/t/<handle>`. Bodies are kept up to 64 KB, and only a short allowlist of headers (never `Authorization`, cookies or tokens). `GET /api/runs/{id}` returns a run (the task nobody delegated, everything delegated from it, and the messages sent from those) with its entries and exchanges.
 
+### Workspaces
+
+A workspace is a team: its agents and its members. People belong to any number of workspaces with a role (`owner` manages members, `admin` manages agents, invitations and waiting rules, `member` sends, answers and adds agents, `viewer` only looks). Each agent belongs to one workspace; handles stay global, so `/a/<handle>` works across workspaces.
+
+A workspace sees the traffic of its own addresses: a task is visible when its sender or recipient is one of them. A call from one workspace to another shows in both, and each side's internal delegations stay its own (the other side's tasks are counted as `hidden` on the run). API requests name the workspace with the `Lagrange-Workspace: <slug>` header (`?workspace=` for `/api/events`), and default to the caller's oldest one. Open signup gives each new person a workspace of their own. Invitations carry a workspace and a role; someone who already has an account logs in and joins. Data from before workspaces lands in `default`.
+
 | Package | What it does |
 |---|---|
 | [`cmd/lagrange`](cmd/lagrange/main.go) | `serve`, `tunnel`, `token`, `migrate`, `healthcheck`. |
 | [`platform`](platform/) | Wires it together: routes, auth (sessions and address tokens), the API, the web app. |
 | [`relay`](relay/) | The executor behind every address: forwards to agents, parks tasks for people, records links and activity. |
-| [`directory`](directory/) | Addresses (agents and people), tokens, users, sessions, stored cards. |
+| [`directory`](directory/) | Addresses (agents and people), tokens, users, sessions, workspaces and members, stored cards. |
 | [`mailbox`](mailbox/) | Tunnel sessions per address, capacity, waiting deliveries. |
 | [`tunnel`](tunnel/) | The tunnel server and client (WebSocket + yamux, reconnects with backoff). |
 | [`activity`](activity/) | The activity log and its live stream, and the recorder of every HTTP exchange. |

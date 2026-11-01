@@ -5,6 +5,7 @@ import { api } from '@/lib/api'
 import { cn } from '@/lib/cn'
 import { useLive } from '@/store/live'
 import { waitingFor } from '@/store/model'
+import { WorkspaceSwitcher } from '@/features/workspaces/Workspaces'
 import { useSession } from '@/store/session'
 import { Avatar } from '@/ui/Avatar'
 
@@ -64,7 +65,10 @@ export function Shell() {
     <div className="flex h-full">
       <nav className="flex w-[76px] shrink-0 flex-col items-center gap-1.5 border-r border-line bg-surface py-3">
         <Logo />
-        <div className="mt-3 flex w-full flex-col gap-1 px-2">
+        <div className="mt-2.5">
+          <WorkspaceSwitcher />
+        </div>
+        <div className="mt-2 flex w-full flex-col gap-1 px-2">
           {item('/', <Network size={19} />, 'Live')}
           {item('/inbox', <Inbox size={19} />, 'Inbox', waiting)}
           {item('/runs', <ListTree size={19} />, 'Runs')}

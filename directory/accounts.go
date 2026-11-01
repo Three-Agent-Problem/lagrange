@@ -3,7 +3,6 @@ package directory
 import (
 	"context"
 	"errors"
-	"fmt"
 	"strings"
 	"time"
 
@@ -27,15 +26,18 @@ type AuthLink struct {
 	UserID int64
 	// InvitedBy is who sent an invitation; zero otherwise.
 	InvitedBy int64
-	ExpiresAt time.Time
+	// WorkspaceID and Role are what an invitation joins.
+	WorkspaceID int64
+	Role        string
+	ExpiresAt   time.Time
 }
 
 // MintAuthLink creates a link token. Only its hash is stored.
 func (d *Directory) MintAuthLink(ctx context.Context, l AuthLink, ttl time.Duration) (string, error) {
 	token := newSecret("lga_")
-	_, err := d.db.Pool.Exec(ctx, `INSERT INTO auth_links (token_hash, purpose, email, user_id, invited_by, expires_at)
-		VALUES ($1, $2, $3, $4, $5, $6)`,
-		hashToken(token), l.Purpose, NormalizeEmail(l.Email), nullID(l.UserID), nullID(l.InvitedBy), time.Now().Add(ttl))
+	_, err := d.db.Pool.Exec(ctx, `INSERT INTO auth_links (token_hash, purpose, email, user_id, invited_by, workspace_id, role, expires_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+		hashToken(token), l.Purpose, NormalizeEmail(l.Email), nullID(l.UserID), nullID(l.InvitedBy), nullID(l.WorkspaceID), l.Role, time.Now().Add(ttl))
 	if err != nil {
 		return "", err
 	}
@@ -44,7 +46,7 @@ func (d *Directory) MintAuthLink(ctx context.Context, l AuthLink, ttl time.Durat
 
 // AuthLink returns an unused, unexpired link for purpose.
 func (d *Directory) AuthLink(ctx context.Context, token, purpose string) (*AuthLink, error) {
-	return d.authLink(ctx, `SELECT purpose, email, coalesce(user_id, 0), coalesce(invited_by, 0), expires_at FROM auth_links
+	return d.authLink(ctx, `SELECT `+linkColumns+` FROM auth_links
 		WHERE token_hash = $1 AND purpose = $2 AND used_at IS NULL AND expires_at > now()`, token, purpose)
 }
 
@@ -53,7 +55,7 @@ func (d *Directory) AuthLink(ctx context.Context, token, purpose string) (*AuthL
 func (d *Directory) ClaimAuthLink(ctx context.Context, token, purpose string) (*AuthLink, error) {
 	return d.authLink(ctx, `UPDATE auth_links SET used_at = now()
 		WHERE token_hash = $1 AND purpose = $2 AND used_at IS NULL AND expires_at > now()
-		RETURNING purpose, email, coalesce(user_id, 0), coalesce(invited_by, 0), expires_at`, token, purpose)
+		RETURNING `+linkColumns, token, purpose)
 }
 
 // ReleaseAuthLink makes a claimed link usable again, after what it was for failed.
@@ -62,9 +64,11 @@ func (d *Directory) ReleaseAuthLink(ctx context.Context, token string) error {
 	return err
 }
 
+const linkColumns = `purpose, email, coalesce(user_id, 0), coalesce(invited_by, 0), coalesce(workspace_id, 0), role, expires_at`
+
 func (d *Directory) authLink(ctx context.Context, query, token, purpose string) (*AuthLink, error) {
 	var l AuthLink
-	err := d.db.Pool.QueryRow(ctx, query, hashToken(token), purpose).Scan(&l.Purpose, &l.Email, &l.UserID, &l.InvitedBy, &l.ExpiresAt)
+	err := d.db.Pool.QueryRow(ctx, query, hashToken(token), purpose).Scan(&l.Purpose, &l.Email, &l.UserID, &l.InvitedBy, &l.WorkspaceID, &l.Role, &l.ExpiresAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -176,22 +180,7 @@ func (d *Directory) Identities(ctx context.Context, userID int64) ([]*Identity, 
 // FreeHandle turns a hint (a provider login, a name, an email) into a valid handle that
 // nobody has yet, adding -2, -3, … when needed.
 func (d *Directory) FreeHandle(ctx context.Context, hint string) (string, error) {
-	base := handleFrom(hint)
-	for i := 1; i <= 50; i++ {
-		h := base
-		if i > 1 {
-			suffix := fmt.Sprintf("-%d", i)
-			h = strings.TrimRight(base[:min(len(base), 40-len(suffix))], "-") + suffix
-		}
-		var taken bool
-		if err := d.db.Pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM addresses WHERE handle = $1)`, h).Scan(&taken); err != nil {
-			return "", err
-		}
-		if !taken {
-			return h, nil
-		}
-	}
-	return "", ErrTaken
+	return d.free(ctx, hint, `SELECT EXISTS (SELECT 1 FROM addresses WHERE handle = $1)`)
 }
 
 func handleFrom(hint string) string {

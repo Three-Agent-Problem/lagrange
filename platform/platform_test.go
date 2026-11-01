@@ -83,10 +83,13 @@ func newEnv(t *testing.T, dbURL string, opts ...func(*platform.Config)) *env {
 }
 
 // agent creates an agent address and returns a token for it.
-func (e *env) agent(t *testing.T, handle string) string {
+func (e *env) agent(t *testing.T, handle string) string { return e.agentIn(t, handle, 0) }
+
+// agentIn creates an agent in a workspace (zero: the default one) and returns its token.
+func (e *env) agentIn(t *testing.T, handle string, workspace int64) string {
 	t.Helper()
 	ctx := t.Context()
-	if err := e.p.Directory.CreateAgent(ctx, &directory.Address{Handle: handle}); err != nil {
+	if err := e.p.Directory.CreateAgent(ctx, &directory.Address{Handle: handle, WorkspaceID: workspace}); err != nil {
 		t.Fatal(err)
 	}
 	tok, err := e.p.Directory.MintToken(ctx, handle, "test")
@@ -398,12 +401,16 @@ func TestWorkerPool(t *testing.T) {
 	}
 }
 
-// api is a logged-in web app session.
+// api is a logged-in web app session, acting in workspace ws (empty: the oldest one).
 type api struct {
 	t   *testing.T
 	url string
 	c   *http.Client
+	ws  string
 }
+
+// in returns the session acting in workspace slug.
+func (a *api) in(slug string) *api { b := *a; b.ws = slug; return &b }
 
 func (e *env) login(t *testing.T, email, password string) *api {
 	t.Helper()
@@ -423,6 +430,9 @@ func (a *api) do(method, path string, body any, want int, out any) {
 	req, _ := http.NewRequest(method, a.url+path, r)
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
+	}
+	if a.ws != "" {
+		req.Header.Set(platform.WorkspaceHeader, a.ws)
 	}
 	resp, err := a.c.Do(req)
 	if err != nil {
@@ -586,14 +596,17 @@ func TestPersonDelegates(t *testing.T) {
 
 // delegator calls @echo through the platform with its own token, propagating the
 // platform's task header, and completes with echo's answer.
-func delegator(e *env, token string) a2asrv.AgentExecutor {
+func delegator(e *env, token string) a2asrv.AgentExecutor { return delegatorTo(e, token, "echo") }
+
+// delegatorTo hands every task to the agent at target and returns its answer.
+func delegatorTo(e *env, token, target string) a2asrv.AgentExecutor {
 	return a2asrv.AgentExecutorFunc(func(ctx context.Context, ec *a2asrv.ExecutorContext) iter.Seq2[a2a.Event, error] {
 		return func(yield func(a2a.Event, error) bool) {
 			if !yield(a2a.NewSubmittedTask(ec, ec.Message), nil) {
 				return
 			}
 			parent, _ := ec.ServiceParams.Get(relay.HeaderTask)
-			card, err := agentcard.DefaultResolver.Resolve(ctx, e.url+"/a/echo")
+			card, err := agentcard.DefaultResolver.Resolve(ctx, e.url+"/a/"+target)
 			if err != nil {
 				yield(nil, err)
 				return
@@ -994,6 +1007,7 @@ type runList struct {
 		Participants []string `json:"participants"`
 		Waiting      []string `json:"waiting"`
 		Tasks        int      `json:"tasks"`
+		Hidden       int      `json:"hidden"`
 	} `json:"runs"`
 }
 

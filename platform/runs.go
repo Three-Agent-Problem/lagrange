@@ -19,6 +19,10 @@ import (
 // A run is one major action, the unit people follow: a task nobody delegated (say "Order
 // 200 hoodies") with every task delegated from it and every message sent from those, or
 // a plain message exchange that wasn't made from a task.
+//
+// A workspace sees runs from its side: a run starts at a task it sees whose parent it
+// doesn't (a call from another workspace starts a run here), and the tasks another
+// workspace delegated internally are left out and counted as Hidden.
 
 // Run summarizes a run for the runs list.
 type Run struct {
@@ -42,6 +46,8 @@ type Run struct {
 	WaitingSince *time.Time `json:"waitingSince,omitempty"`
 	// Archived runs are hidden from the list unless asked for (?archived=1).
 	Archived bool `json:"archived,omitempty"`
+	// Hidden counts the run's tasks inside other workspaces, which this one doesn't see.
+	Hidden int `json:"hidden,omitempty"`
 }
 
 // RunDetail is everything recorded for a run.
@@ -79,8 +85,9 @@ func (p *Platform) runTrees(ctx context.Context, roots []string) (map[string][]s
 	return trees, rows.Err()
 }
 
-// rootOf walks up from a task to the task nobody delegated it from.
-func (p *Platform) rootOf(ctx context.Context, id string) (string, error) {
+// rootOf walks up from a task to the task nobody delegated it from, or with s, to the
+// first task whose parent s doesn't see.
+func (p *Platform) rootOf(ctx context.Context, s *scope, id string) (string, error) {
 	for range maxRunDepth {
 		link, err := p.Links.Get(ctx, a2a.TaskID(id))
 		if err != nil {
@@ -89,10 +96,27 @@ func (p *Platform) rootOf(ctx context.Context, id string) (string, error) {
 		if link == nil || link.ParentTaskID == "" {
 			return id, nil
 		}
+		if s != nil {
+			parent, err := p.queryTasks(ctx, false, `WHERE t.id = $1 AND `+visibleSQL(2), string(link.ParentTaskID), s.handles)
+			if err != nil {
+				return "", err
+			}
+			if len(parent) == 0 {
+				return id, nil
+			}
+		}
 		id = string(link.ParentTaskID)
 	}
 	return id, nil
 }
+
+// rootsSQL selects the tasks that start runs in a scope: visible tasks with no visible
+// parent. $1 is the scope's handles, $2 the limit.
+const rootsSQL = `SELECT t.id FROM tasks t LEFT JOIN task_links l ON l.task_id = t.id
+	LEFT JOIN tasks pt ON pt.id = l.parent_task_id LEFT JOIN task_links pl ON pl.task_id = pt.id
+	WHERE (t.tenant = ANY($1) OR coalesce(l.sender, t.owner) = ANY($1))
+		AND (pt.id IS NULL OR NOT (pt.tenant = ANY($1) OR coalesce(pl.sender, pt.owner) = ANY($1)))
+	ORDER BY t.updated_at DESC LIMIT $2`
 
 // summarize builds a run's summary from its tasks (root first) and entries.
 func summarize(root *TaskView, tasks []*TaskView, entries []*activity.Entry) *Run {
@@ -172,15 +196,14 @@ func runStatus(r *Run) string {
 // handleRuns lists runs, newest activity first: ?status=running|waiting|done|failed,
 // ?q (title and participants), ?participant=<handle>, ?waitingOn=<handle> (runs blocked on
 // that address), ?limit, ?archived=1 (only the archived ones; otherwise they are left out).
-func (p *Platform) handleRuns(w http.ResponseWriter, r *http.Request, me *directory.User) {
+func (p *Platform) handleRuns(w http.ResponseWriter, r *http.Request, me *directory.User, s *scope) {
 	ctx := r.Context()
 	q := r.URL.Query()
 	limit, _ := strconv.Atoi(q.Get("limit"))
 	if limit <= 0 || limit > 500 {
 		limit = 100
 	}
-	rows, err := p.DB.Pool.Query(ctx, `SELECT t.id FROM tasks t LEFT JOIN task_links l ON l.task_id = t.id
-		WHERE coalesce(l.parent_task_id, '') = '' ORDER BY t.updated_at DESC LIMIT $1`, limit*2)
+	rows, err := p.DB.Pool.Query(ctx, rootsSQL, s.handles, limit*2)
 	if err != nil {
 		apiError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -219,12 +242,19 @@ func (p *Platform) handleRuns(w http.ResponseWriter, r *http.Request, me *direct
 			apiError(w, http.StatusInternalServerError, err.Error())
 			return
 		}
-		tasksOf, entriesOf := map[string][]*TaskView{}, map[string][]*activity.Entry{}
+		tasksOf, entriesOf, hidden := map[string][]*TaskView{}, map[string][]*activity.Entry{}, map[string]int{}
 		for _, v := range views {
 			root := owner[string(v.ID)]
+			if !s.task(v) {
+				hidden[root]++
+				continue
+			}
 			tasksOf[root] = append(tasksOf[root], v)
 		}
 		for _, e := range entries {
+			if !s.entry(e) {
+				continue
+			}
 			root := owner[e.TaskID]
 			if root == "" {
 				root = owner[e.ParentTaskID]
@@ -237,10 +267,12 @@ func (p *Platform) handleRuns(w http.ResponseWriter, r *http.Request, me *direct
 			if i < 0 {
 				continue
 			}
-			runs = append(runs, summarize(ts[i], ts, entriesOf[root]))
+			run := summarize(ts[i], ts, entriesOf[root])
+			run.Hidden = hidden[root]
+			runs = append(runs, run)
 		}
 	}
-	messages, err := p.Activity.Messages(ctx, limit)
+	messages, err := p.Activity.Messages(ctx, s.handles, limit)
 	if err != nil {
 		apiError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -249,7 +281,7 @@ func (p *Platform) handleRuns(w http.ResponseWriter, r *http.Request, me *direct
 		runs = append(runs, messageRun(e))
 	}
 
-	archived, err := p.archivedRuns(ctx)
+	archived, err := p.archivedRuns(ctx, s)
 	if err != nil {
 		apiError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -284,9 +316,9 @@ func (p *Platform) handleRuns(w http.ResponseWriter, r *http.Request, me *direct
 
 // handleRun returns everything recorded for the run a task belongs to: {id} is any task
 // in it (the root is found), or msg-<seq>.
-func (p *Platform) handleRun(w http.ResponseWriter, r *http.Request, me *directory.User) {
+func (p *Platform) handleRun(w http.ResponseWriter, r *http.Request, me *directory.User, s *scope) {
 	ctx := r.Context()
-	d, err := p.runDetail(ctx, r.PathValue("id"))
+	d, err := p.runDetail(ctx, s, r.PathValue("id"))
 	switch {
 	case errors.Is(err, errNoRun):
 		apiError(w, http.StatusNotFound, "no such run")
@@ -299,12 +331,12 @@ func (p *Platform) handleRun(w http.ResponseWriter, r *http.Request, me *directo
 
 var errNoRun = errors.New("no such run")
 
-func (p *Platform) markArchived(ctx context.Context, run *Run) {
-	_ = p.DB.Pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM archived_runs WHERE run_id = $1)`, run.ID).Scan(&run.Archived)
+func (p *Platform) markArchived(ctx context.Context, s *scope, run *Run) {
+	_ = p.DB.Pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM archived_runs WHERE workspace_id = $1 AND run_id = $2)`, s.ID, run.ID).Scan(&run.Archived)
 }
 
-func (p *Platform) archivedRuns(ctx context.Context) (map[string]bool, error) {
-	rows, err := p.DB.Pool.Query(ctx, `SELECT run_id FROM archived_runs`)
+func (p *Platform) archivedRuns(ctx context.Context, s *scope) (map[string]bool, error) {
+	rows, err := p.DB.Pool.Query(ctx, `SELECT run_id FROM archived_runs WHERE workspace_id = $1`, s.ID)
 	if err != nil {
 		return nil, err
 	}
@@ -322,9 +354,9 @@ func (p *Platform) archivedRuns(ctx context.Context) (map[string]bool, error) {
 
 // handleArchiveRun hides a run from the list (POST) or shows it again (DELETE). {id} is
 // any task in the run, or msg-<seq>.
-func (p *Platform) handleArchiveRun(w http.ResponseWriter, r *http.Request, me *directory.User) {
+func (p *Platform) handleArchiveRun(w http.ResponseWriter, r *http.Request, me *directory.User, s *scope) {
 	ctx := r.Context()
-	d, err := p.runDetail(ctx, r.PathValue("id"))
+	d, err := p.runDetail(ctx, s, r.PathValue("id"))
 	switch {
 	case errors.Is(err, errNoRun):
 		apiError(w, http.StatusNotFound, "no such run")
@@ -334,9 +366,9 @@ func (p *Platform) handleArchiveRun(w http.ResponseWriter, r *http.Request, me *
 		return
 	}
 	if r.Method == http.MethodDelete {
-		_, err = p.DB.Pool.Exec(ctx, `DELETE FROM archived_runs WHERE run_id = $1`, d.Run.ID)
+		_, err = p.DB.Pool.Exec(ctx, `DELETE FROM archived_runs WHERE workspace_id = $1 AND run_id = $2`, s.ID, d.Run.ID)
 	} else {
-		_, err = p.DB.Pool.Exec(ctx, `INSERT INTO archived_runs (run_id, archived_by) VALUES ($1, $2) ON CONFLICT DO NOTHING`, d.Run.ID, me.Handle)
+		_, err = p.DB.Pool.Exec(ctx, `INSERT INTO archived_runs (workspace_id, run_id, archived_by) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`, s.ID, d.Run.ID, me.Handle)
 	}
 	if err != nil {
 		apiError(w, http.StatusInternalServerError, err.Error())
@@ -345,14 +377,15 @@ func (p *Platform) handleArchiveRun(w http.ResponseWriter, r *http.Request, me *
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func (p *Platform) runDetail(ctx context.Context, id string) (*RunDetail, error) {
-	if s, ok := strings.CutPrefix(id, "msg-"); ok {
-		seq, _ := strconv.ParseInt(s, 10, 64)
+// runDetail is the run as s sees it.
+func (p *Platform) runDetail(ctx context.Context, s *scope, id string) (*RunDetail, error) {
+	if n, ok := strings.CutPrefix(id, "msg-"); ok {
+		seq, _ := strconv.ParseInt(n, 10, 64)
 		e, err := p.Activity.Get(ctx, seq)
 		if err != nil {
 			return nil, err
 		}
-		if e == nil || e.Kind != activity.KindMessage {
+		if e == nil || e.Kind != activity.KindMessage || !s.entry(e) {
 			return nil, errNoRun
 		}
 		exchanges, err := p.exchangesOf(ctx, nil, []*activity.Entry{e})
@@ -360,10 +393,15 @@ func (p *Platform) runDetail(ctx context.Context, id string) (*RunDetail, error)
 			return nil, err
 		}
 		run := messageRun(e)
-		p.markArchived(ctx, run)
+		p.markArchived(ctx, s, run)
 		return &RunDetail{Run: run, Tasks: []*TaskView{}, Entries: []*activity.Entry{e}, Exchanges: exchanges}, nil
 	}
-	root, err := p.rootOf(ctx, id)
+	if seen, err := p.queryTasks(ctx, false, `WHERE t.id = $1 AND `+visibleSQL(2), id, s.handles); err != nil {
+		return nil, err
+	} else if len(seen) == 0 {
+		return nil, errNoRun
+	}
+	root, err := p.rootOf(ctx, s, id)
 	if err != nil {
 		return nil, err
 	}
@@ -371,10 +409,17 @@ func (p *Platform) runDetail(ctx context.Context, id string) (*RunDetail, error)
 	if err != nil {
 		return nil, err
 	}
-	ids := trees[root]
-	tasks, err := p.queryTasks(ctx, true, `WHERE t.id = ANY($1) ORDER BY t.created_at`, ids)
+	all, err := p.queryTasks(ctx, true, `WHERE t.id = ANY($1) ORDER BY t.created_at`, trees[root])
 	if err != nil {
 		return nil, err
+	}
+	var ids []string
+	tasks := []*TaskView{}
+	for _, t := range all {
+		if s.task(t) {
+			tasks = append(tasks, t)
+			ids = append(ids, string(t.ID))
+		}
 	}
 	i := slices.IndexFunc(tasks, func(v *TaskView) bool { return string(v.ID) == root })
 	if i < 0 {
@@ -384,6 +429,7 @@ func (p *Platform) runDetail(ctx context.Context, id string) (*RunDetail, error)
 	if err != nil {
 		return nil, err
 	}
+	entries = slices.DeleteFunc(entries, func(e *activity.Entry) bool { return !s.entry(e) })
 	exchanges, err := p.exchangesOf(ctx, ids, entries)
 	if err != nil {
 		return nil, err
@@ -402,7 +448,8 @@ func (p *Platform) runDetail(ctx context.Context, id string) (*RunDetail, error)
 		entries = []*activity.Entry{}
 	}
 	run := summarize(tasks[i], tasks, entries)
-	p.markArchived(ctx, run)
+	run.Hidden = len(all) - len(tasks)
+	p.markArchived(ctx, s, run)
 	return &RunDetail{Run: run, Tasks: tasks, Entries: entries, Exchanges: exchanges}, nil
 }
 

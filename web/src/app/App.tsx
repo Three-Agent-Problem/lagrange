@@ -14,6 +14,7 @@ import { Inbox } from '@/features/inbox/Inbox'
 import { Runs } from '@/features/runs/Runs'
 import { Settings } from '@/features/settings/Settings'
 import { Waiting } from '@/features/waiting/Waiting'
+import { NoWorkspace } from '@/features/workspaces/Workspaces'
 import { useSession } from '@/store/session'
 
 /** A decision link (/d/<token>) works without logging in: the token is the credential. */
@@ -31,13 +32,14 @@ export function App() {
 }
 
 function LoggedIn() {
-  const { ready, user, load } = useSession()
+  const { ready, user, workspace, load } = useSession()
   useEffect(() => {
     void load()
   }, [load])
   if (!ready) return null
   if (!user) return <Login />
   if (!user.verified) return <VerifyEmail />
+  if (!workspace) return <NoWorkspace />
   return (
     <BrowserRouter>
       <Routes>

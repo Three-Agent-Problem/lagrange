@@ -5,7 +5,7 @@ import { Connect } from '@/features/agents/Connect'
 import { api, type Address, type Token } from '@/lib/api'
 import { cn } from '@/lib/cn'
 import { useView } from '@/store/live'
-import { useSession } from '@/store/session'
+import { useCan, useSession } from '@/store/session'
 import { Button } from '@/ui/AnswerForm'
 import { Avatar } from '@/ui/Avatar'
 import { CodeLine } from '@/ui/Copy'
@@ -17,7 +17,10 @@ export function Agents() {
   const [params, setParams] = useSearchParams()
   const [creating, setCreating] = useState(params.has('new'))
   const [secret, setSecret] = useState<{ handle: string; token: string }>()
-  const mine = addresses.filter((a) => a.kind === 'agent' && (user?.admin || a.ownerId === user?.id))
+  const admin = useCan('admin')
+  const member = useCan('member')
+  // Admins manage every agent of the workspace; members the ones they created.
+  const mine = addresses.filter((a) => a.kind === 'agent' && (admin || a.ownerId === user?.id))
 
   useEffect(() => {
     void refreshAddresses()
@@ -31,9 +34,11 @@ export function Agents() {
             <h1 className="text-xl font-extrabold">Agents</h1>
             <p className="mt-1 text-sm text-muted">Every agent gets an address. Run it anywhere; the tunnel connects it here, no deploy or open port needed.</p>
           </div>
-          <Button icon={<Plus size={14} />} onClick={() => (setCreating(true), setSecret(undefined))}>
-            New agent
-          </Button>
+          {member && (
+            <Button icon={<Plus size={14} />} onClick={() => (setCreating(true), setSecret(undefined))}>
+              New agent
+            </Button>
+          )}
         </header>
 
         {creating && (
@@ -50,7 +55,8 @@ export function Agents() {
         {secret && <Connect key={secret.token} {...secret} onClose={() => setSecret(undefined)} />}
 
         <div className="grid gap-4">
-          {mine.length === 0 && !creating && !secret && <FirstAgent onStart={() => setCreating(true)} />}
+          {mine.length === 0 && !creating && !secret && member && <FirstAgent onStart={() => setCreating(true)} />}
+          {!member && <p className="text-sm text-muted">You are a viewer in this workspace: its agents are in the Directory, and members and admins add new ones.</p>}
           {mine.map((a) => (
             <AgentCard key={a.handle} a={a} live={model.presence[a.handle]} publicUrl={publicUrl} onSecret={setSecret} onDeleted={() => void refreshAddresses()} />
           ))}

@@ -261,7 +261,24 @@ func (p *Platform) oauthUser(r *http.Request, o *OAuthProvider, prof *OAuthProfi
 		if err != nil {
 			return 0, "", "This invitation doesn't work any more; ask for a new one."
 		}
-		u, err := p.registerFromProvider(ctx, o, prof, l.Email, true)
+		if u, err := p.Directory.UserByEmail(ctx, l.Email); err == nil {
+			// The invited email has an account: connect the provider and join.
+			if err := p.Directory.LinkIdentity(ctx, u.ID, o.Name, prof.Subject, email); err != nil {
+				_ = p.Directory.ReleaseAuthLink(ctx, st.Invite)
+				return 0, "", "Couldn't connect that account."
+			}
+			if err := p.join(ctx, l, u); err != nil {
+				_ = p.Directory.ReleaseAuthLink(ctx, st.Invite)
+				return 0, "", userMessage(err)
+			}
+			return u.ID, "", ""
+		}
+		ws, role, err := p.inviteTarget(ctx, l)
+		if err != nil {
+			_ = p.Directory.ReleaseAuthLink(ctx, st.Invite)
+			return 0, "", "The workspace of this invitation is gone."
+		}
+		u, err := p.registerFromProvider(ctx, o, prof, l.Email, true, ws.ID, role)
 		if err != nil {
 			_ = p.Directory.ReleaseAuthLink(ctx, st.Invite)
 			return 0, "", userMessage(err)
@@ -284,7 +301,7 @@ func (p *Platform) oauthUser(r *http.Request, o *OAuthProvider, prof *OAuthProfi
 	if email == "" {
 		return 0, "", "Your " + o.Label + " account has no email address we can use."
 	}
-	u, err := p.registerFromProvider(ctx, o, prof, email, prof.EmailVerified)
+	u, err := p.registerFromProvider(ctx, o, prof, email, prof.EmailVerified, 0, "")
 	if err != nil {
 		return 0, "", userMessage(err)
 	}
@@ -294,14 +311,16 @@ func (p *Platform) oauthUser(r *http.Request, o *OAuthProvider, prof *OAuthProfi
 	return u.ID, "", ""
 }
 
-func (p *Platform) registerFromProvider(ctx context.Context, o *OAuthProvider, prof *OAuthProfile, email string, verified bool) (*directory.User, error) {
+// registerFromProvider creates a person for a provider account, joining workspace with
+// role, or with workspace zero in a workspace of their own.
+func (p *Platform) registerFromProvider(ctx context.Context, o *OAuthProvider, prof *OAuthProfile, email string, verified bool, workspace int64, role string) (*directory.User, error) {
 	handle, err := p.Directory.FreeHandle(ctx, firstNonEmpty(prof.Login, prof.Name, email))
 	if err != nil {
 		return nil, err
 	}
 	u, err := p.Directory.Register(ctx, directory.Registration{
 		Email: email, Name: firstNonEmpty(prof.Name, prof.Login, handle), Handle: handle,
-		Verified: verified || p.cfg.Email == nil, Provider: o.Name, Subject: prof.Subject,
+		Verified: verified || p.cfg.Email == nil, Provider: o.Name, Subject: prof.Subject, Workspace: workspace, Role: role,
 	})
 	if err != nil {
 		return nil, err

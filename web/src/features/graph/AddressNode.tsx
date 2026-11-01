@@ -44,7 +44,8 @@ function toneOf(d: AddressNodeData): Tone {
   if (waiting.length) return 'waiting'
   if (act.failed) return 'failed'
   if (act.working) return 'working'
-  const tunnelAgent = address?.kind === 'agent' && !address.endpoint
+  // Another workspace's tunnels aren't shown, so its agents never look offline.
+  const tunnelAgent = address?.kind === 'agent' && !address.endpoint && !address.external
   if (tunnelAgent && !(presence?.sessions ?? address.stats.sessions)) return 'offline'
   return 'idle'
 }
@@ -54,7 +55,8 @@ export function AddressNode({ data, selected }: NodeProps<AddressFlowNode>) {
   const presence = data.presence ?? address?.stats
   const tone = toneOf(data)
   const human = address?.kind === 'human'
-  const tunnel = address?.kind === 'agent' && !address.endpoint
+  const external = !!address?.external
+  const tunnel = address?.kind === 'agent' && !address.endpoint && !external
   const sessions = presence?.sessions ?? 0
   const capacity = presence?.capacity ?? 0
   const inFlight = presence?.inFlight ?? act.working
@@ -65,7 +67,13 @@ export function AddressNode({ data, selected }: NodeProps<AddressFlowNode>) {
   return (
     <div
       data-focus={selected ? 'selected' : undefined}
-      className={cn('addr-node relative flex items-center gap-2.5 rounded-2xl border-2 bg-surface px-3 shadow-card transition-colors', RING[tone], tone === 'offline' && 'opacity-70')}
+      className={cn(
+        'addr-node relative flex items-center gap-2.5 rounded-2xl border-2 bg-surface px-3 shadow-card transition-colors',
+        RING[tone],
+        tone === 'offline' && 'opacity-70',
+        external && 'border-dashed',
+      )}
+      title={external ? `@${handle} is in another workspace: you see the calls between you, not its own work` : undefined}
       style={{ width: NODE_W, height: NODE_H, ['--ring' as string]: RING_COLOR[tone] }}
     >
       <Handle type="target" position={Position.Left} id="in" />
@@ -85,7 +93,7 @@ export function AddressNode({ data, selected }: NodeProps<AddressFlowNode>) {
       </div>
 
       <span className="absolute -top-2.5 left-3 rounded-full bg-surface-2 px-1.5 py-0.5 font-mono text-[9px] font-bold tracking-wide text-muted uppercase ring-1 ring-line">
-        {handle === OUTSIDE ? 'public' : human ? 'person' : tunnel ? 'tunnel' : 'endpoint'}
+        {handle === OUTSIDE ? 'public' : external ? 'external' : human ? 'person' : tunnel ? 'tunnel' : 'endpoint'}
       </span>
 
       {tunnel && (

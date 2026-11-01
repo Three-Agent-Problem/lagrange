@@ -32,41 +32,40 @@ func (p *Platform) api(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/logout", p.handleLogout)
 	mux.Handle("GET /api/me", p.authedAny(p.handleMe))
 	p.accountRoutes(mux)
-	mux.Handle("GET /api/users", p.authed(p.handleUsers))
-	mux.Handle("POST /api/users", p.authed(p.handleCreateUser))
-	mux.Handle("GET /api/addresses", p.authed(p.handleAddresses))
-	mux.Handle("POST /api/addresses", p.authed(p.handleCreateAddress))
-	mux.Handle("DELETE /api/addresses/{handle}", p.authed(p.handleDeleteAddress))
-	mux.Handle("GET /api/addresses/{handle}/tokens", p.authed(p.handleTokens))
-	mux.Handle("POST /api/addresses/{handle}/tokens", p.authed(p.handleMintToken))
+	p.workspaceRoutes(mux)
+	mux.Handle("GET /api/users", p.in(directory.RoleViewer, p.handleUsers))
+	mux.Handle("POST /api/users", p.in(directory.RoleAdmin, p.handleCreateUser))
+	mux.Handle("GET /api/addresses", p.in(directory.RoleViewer, p.handleAddresses))
+	mux.Handle("POST /api/addresses", p.in(directory.RoleMember, p.handleCreateAddress))
+	mux.Handle("DELETE /api/addresses/{handle}", p.in(directory.RoleMember, p.handleDeleteAddress))
+	mux.Handle("GET /api/addresses/{handle}/tokens", p.in(directory.RoleMember, p.handleTokens))
+	mux.Handle("POST /api/addresses/{handle}/tokens", p.in(directory.RoleMember, p.handleMintToken))
 	mux.Handle("GET /api/inbox", p.authed(p.handleInbox))
-	mux.Handle("GET /api/tasks", p.authed(p.handleTasks))
-	mux.Handle("GET /api/tasks/{id}", p.authed(p.handleTask))
-	mux.Handle("POST /api/tasks/{id}/answer", p.authed(p.handleAnswer))
-	mux.Handle("POST /api/tasks/{id}/cancel", p.authed(p.handleCancel))
-	mux.Handle("POST /api/send", p.authed(p.handleSend))
-	mux.Handle("GET /api/graph", p.authed(p.handleGraph))
-	mux.Handle("GET /api/runs", p.authed(p.handleRuns))
-	mux.Handle("GET /api/runs/{id}", p.authed(p.handleRun))
-	mux.Handle("POST /api/runs/{id}/archive", p.authed(p.handleArchiveRun))
-	mux.Handle("DELETE /api/runs/{id}/archive", p.authed(p.handleArchiveRun))
-	mux.Handle("GET /api/activity", p.authed(p.handleActivity))
+	mux.Handle("GET /api/tasks", p.in(directory.RoleViewer, p.handleTasks))
+	mux.Handle("GET /api/tasks/{id}", p.in(directory.RoleViewer, p.handleTask))
+	mux.Handle("POST /api/tasks/{id}/answer", p.in(directory.RoleViewer, p.handleAnswer))
+	mux.Handle("POST /api/tasks/{id}/cancel", p.in(directory.RoleViewer, p.handleCancel))
+	mux.Handle("POST /api/send", p.in(directory.RoleMember, p.handleSend))
+	mux.Handle("GET /api/graph", p.in(directory.RoleViewer, p.handleGraph))
+	mux.Handle("GET /api/runs", p.in(directory.RoleViewer, p.handleRuns))
+	mux.Handle("GET /api/runs/{id}", p.in(directory.RoleViewer, p.handleRun))
+	mux.Handle("POST /api/runs/{id}/archive", p.in(directory.RoleMember, p.handleArchiveRun))
+	mux.Handle("DELETE /api/runs/{id}/archive", p.in(directory.RoleMember, p.handleArchiveRun))
+	mux.Handle("GET /api/activity", p.in(directory.RoleViewer, p.handleActivity))
 	mux.Handle("GET /api/settings/notifications", p.authed(p.handleNotificationSettings))
 	mux.Handle("PUT /api/settings/notifications", p.authed(p.handleSetNotificationSettings))
 	mux.Handle("POST /api/settings/notifications/test", p.authed(p.handleTestNotification))
 	mux.Handle("POST /api/dev/reset", p.authed(p.handleDevReset))
-	mux.Handle("GET /api/conversations", p.authed(p.handleConversations))
-	mux.Handle("GET /api/conversations/{a}/{b}", p.authed(p.handleConversation))
-	mux.Handle("GET /api/waiting", p.authed(p.handleWaiting))
-	mux.Handle("POST /api/waiting/{id}/remind", p.authed(p.handleRemind))
-	mux.Handle("GET /api/settings/wait-policy", p.authed(p.handleWaitPolicy))
-	mux.Handle("PUT /api/settings/wait-policy", p.authed(p.handleSetWaitPolicy))
+	mux.Handle("GET /api/conversations", p.in(directory.RoleViewer, p.handleConversations))
+	mux.Handle("GET /api/conversations/{a}/{b}", p.in(directory.RoleViewer, p.handleConversation))
+	mux.Handle("GET /api/waiting", p.in(directory.RoleViewer, p.handleWaiting))
+	mux.Handle("POST /api/waiting/{id}/remind", p.in(directory.RoleMember, p.handleRemind))
+	mux.Handle("GET /api/settings/wait-policy", p.in(directory.RoleViewer, p.handleWaitPolicy))
+	mux.Handle("PUT /api/settings/wait-policy", p.in(directory.RoleAdmin, p.handleSetWaitPolicy))
 	// Decision links carry their own credential, so they need no session.
 	mux.HandleFunc("GET /api/decisions/{token}", p.handleDecision)
 	mux.HandleFunc("POST /api/decisions/{token}", p.handleDecisionAnswer)
-	mux.Handle("GET /api/events", p.authed(func(w http.ResponseWriter, r *http.Request, _ *directory.User) {
-		p.Activity.Stream(w, r)
-	}))
+	mux.Handle("GET /api/events", p.in(directory.RoleViewer, p.handleEvents))
 }
 
 type apiHandler func(w http.ResponseWriter, r *http.Request, me *directory.User)
@@ -141,14 +140,20 @@ func (p *Platform) handleMe(w http.ResponseWriter, r *http.Request, me *director
 		apiError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	workspaces, err := p.Directory.Workspaces(r.Context(), me.ID)
+	if err != nil {
+		apiError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"user": me, "identities": identities, "auth": p.authMethods(),
+		"user": me, "identities": identities, "workspaces": workspaces, "auth": p.authMethods(),
 		"publicUrl": p.cfg.PublicURL, "dev": p.cfg.Dev, "devSeed": p.seed != nil,
 	})
 }
 
-func (p *Platform) handleUsers(w http.ResponseWriter, r *http.Request, me *directory.User) {
-	users, err := p.Directory.Users(r.Context())
+// handleUsers lists the workspace's members.
+func (p *Platform) handleUsers(w http.ResponseWriter, r *http.Request, me *directory.User, s *scope) {
+	users, err := p.Directory.Members(r.Context(), s.ID)
 	if err != nil {
 		apiError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -156,17 +161,20 @@ func (p *Platform) handleUsers(w http.ResponseWriter, r *http.Request, me *direc
 	writeJSON(w, http.StatusOK, map[string]any{"users": users})
 }
 
-func (p *Platform) handleCreateUser(w http.ResponseWriter, r *http.Request, me *directory.User) {
-	if !me.Admin {
-		apiError(w, http.StatusForbidden, "only admins can invite people")
-		return
-	}
-	var body struct{ Email, Name, Handle, Password string }
+// handleCreateUser creates a person with a password, as a member of the workspace (or
+// with ?role). Invitations are the friendlier way; this one is for scripts.
+func (p *Platform) handleCreateUser(w http.ResponseWriter, r *http.Request, me *directory.User, s *scope) {
+	var body struct{ Email, Name, Handle, Password, Role string }
 	if err := decode(r, &body); err != nil {
-		apiError(w, http.StatusBadRequest, "send {email, name, handle, password}")
+		apiError(w, http.StatusBadRequest, "send {email, name, handle, password, role}")
 		return
 	}
-	u, err := p.Directory.CreateUser(r.Context(), strings.TrimSpace(body.Email), body.Name, body.Handle, body.Password, false)
+	role, ok := p.grantable(w, s, body.Role)
+	if !ok {
+		return
+	}
+	u, err := p.Directory.Register(r.Context(), directory.Registration{Email: body.Email, Name: body.Name, Handle: body.Handle,
+		Password: body.Password, Verified: true, Workspace: s.ID, Role: role})
 	if err != nil {
 		apiError(w, statusOf(err), err.Error())
 		return
@@ -201,11 +209,14 @@ func (p *Platform) addressChanged(ctx context.Context, handle string) {
 // AddressView is an address as the web app sees it.
 type AddressView struct {
 	*directory.Address
-	Card     *a2a.AgentCard `json:"card"`
-	CardURL  string         `json:"cardUrl"`
-	Online   bool           `json:"online"`
-	Stats    mailbox.Stats  `json:"stats"`
-	Sessions []SessionView  `json:"sessions"`
+	Card    *a2a.AgentCard `json:"card"`
+	CardURL string         `json:"cardUrl"`
+	Online  bool           `json:"online"`
+	// External addresses belong to another workspace: they show because they talked to
+	// this one.
+	External bool          `json:"external,omitempty"`
+	Stats    mailbox.Stats `json:"stats"`
+	Sessions []SessionView `json:"sessions"`
 }
 
 // SessionView is a connected tunnel.
@@ -228,8 +239,15 @@ func (p *Platform) addressView(a *directory.Address) *AddressView {
 	return v
 }
 
-func (p *Platform) addressViews(ctx context.Context) ([]*AddressView, error) {
-	addrs, err := p.Directory.Addresses(ctx)
+// addressViews lists a workspace's addresses, or with s nil every address.
+func (p *Platform) addressViews(ctx context.Context, s *scope) ([]*AddressView, error) {
+	var addrs []*directory.Address
+	var err error
+	if s == nil {
+		addrs, err = p.Directory.Addresses(ctx)
+	} else {
+		addrs, err = p.Directory.AddressesIn(ctx, s.ID)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -240,8 +258,8 @@ func (p *Platform) addressViews(ctx context.Context) ([]*AddressView, error) {
 	return views, nil
 }
 
-func (p *Platform) handleAddresses(w http.ResponseWriter, r *http.Request, me *directory.User) {
-	views, err := p.addressViews(r.Context())
+func (p *Platform) handleAddresses(w http.ResponseWriter, r *http.Request, me *directory.User, s *scope) {
+	views, err := p.addressViews(r.Context(), s)
 	if err != nil {
 		apiError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -254,13 +272,13 @@ func (p *Platform) TunnelCommand(token string) string {
 	return fmt.Sprintf("lagrange tunnel --server %s --token %s --to http://localhost:9001", p.cfg.PublicURL, token)
 }
 
-func (p *Platform) handleCreateAddress(w http.ResponseWriter, r *http.Request, me *directory.User) {
+func (p *Platform) handleCreateAddress(w http.ResponseWriter, r *http.Request, me *directory.User, s *scope) {
 	var body struct{ Handle, DisplayName, Description, Endpoint string }
 	if err := decode(r, &body); err != nil {
 		apiError(w, http.StatusBadRequest, "send {handle, displayName, description, endpoint}")
 		return
 	}
-	a := &directory.Address{Handle: strings.ToLower(strings.TrimSpace(body.Handle)), OwnerID: me.ID,
+	a := &directory.Address{Handle: strings.ToLower(strings.TrimSpace(body.Handle)), OwnerID: me.ID, WorkspaceID: s.ID,
 		DisplayName: body.DisplayName, Description: body.Description, Endpoint: strings.TrimSuffix(body.Endpoint, "/")}
 	if err := p.Directory.CreateAgent(r.Context(), a); err != nil {
 		apiError(w, statusOf(err), err.Error())
@@ -275,26 +293,27 @@ func (p *Platform) handleCreateAddress(w http.ResponseWriter, r *http.Request, m
 	writeJSON(w, http.StatusCreated, map[string]any{"address": p.addressView(a), "token": token, "command": p.TunnelCommand(token)})
 }
 
-// mayManage reports whether me may change an address.
-func mayManage(me *directory.User, a *directory.Address) bool {
-	return me.Admin || (a.OwnerID != 0 && a.OwnerID == me.ID)
+// mayManage reports whether me may change an agent of the workspace: its admins may,
+// and so may the member who created it.
+func mayManage(me *directory.User, s *scope, a *directory.Address) bool {
+	return s.can(directory.RoleAdmin) || (a.OwnerID != 0 && a.OwnerID == me.ID)
 }
 
-func (p *Platform) managedAddress(w http.ResponseWriter, r *http.Request, me *directory.User) *directory.Address {
+func (p *Platform) managedAddress(w http.ResponseWriter, r *http.Request, me *directory.User, s *scope) *directory.Address {
 	a, err := p.Directory.Address(r.Context(), r.PathValue("handle"))
-	if err != nil {
+	if err != nil || a.Kind == directory.KindAgent && a.WorkspaceID != s.ID {
 		apiError(w, http.StatusNotFound, "no such address")
 		return nil
 	}
-	if a.Kind != directory.KindAgent || !mayManage(me, a) {
+	if a.Kind != directory.KindAgent || !mayManage(me, s, a) {
 		apiError(w, http.StatusForbidden, "you don't manage this agent")
 		return nil
 	}
 	return a
 }
 
-func (p *Platform) handleDeleteAddress(w http.ResponseWriter, r *http.Request, me *directory.User) {
-	a := p.managedAddress(w, r, me)
+func (p *Platform) handleDeleteAddress(w http.ResponseWriter, r *http.Request, me *directory.User, s *scope) {
+	a := p.managedAddress(w, r, me, s)
 	if a == nil {
 		return
 	}
@@ -309,8 +328,8 @@ func (p *Platform) handleDeleteAddress(w http.ResponseWriter, r *http.Request, m
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func (p *Platform) handleTokens(w http.ResponseWriter, r *http.Request, me *directory.User) {
-	a := p.managedAddress(w, r, me)
+func (p *Platform) handleTokens(w http.ResponseWriter, r *http.Request, me *directory.User, s *scope) {
+	a := p.managedAddress(w, r, me, s)
 	if a == nil {
 		return
 	}
@@ -322,8 +341,8 @@ func (p *Platform) handleTokens(w http.ResponseWriter, r *http.Request, me *dire
 	writeJSON(w, http.StatusOK, map[string]any{"tokens": tokens})
 }
 
-func (p *Platform) handleMintToken(w http.ResponseWriter, r *http.Request, me *directory.User) {
-	a := p.managedAddress(w, r, me)
+func (p *Platform) handleMintToken(w http.ResponseWriter, r *http.Request, me *directory.User, s *scope) {
+	a := p.managedAddress(w, r, me, s)
 	if a == nil {
 		return
 	}
@@ -432,8 +451,9 @@ func (p *Platform) handleInbox(w http.ResponseWriter, r *http.Request, me *direc
 	writeJSON(w, http.StatusOK, map[string]any{"tasks": tasks})
 }
 
-// handleTasks lists recent tasks; with ?mine=1 only the ones I sent or received.
-func (p *Platform) handleTasks(w http.ResponseWriter, r *http.Request, me *directory.User) {
+// handleTasks lists the workspace's recent tasks; with ?mine=1 only the ones I sent or
+// received.
+func (p *Platform) handleTasks(w http.ResponseWriter, r *http.Request, me *directory.User, s *scope) {
 	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
 	if limit <= 0 || limit > 500 {
 		limit = 200
@@ -443,7 +463,7 @@ func (p *Platform) handleTasks(w http.ResponseWriter, r *http.Request, me *direc
 	if r.URL.Query().Get("mine") == "1" {
 		tasks, err = p.queryTasks(r.Context(), true, `WHERE t.tenant = $1 OR coalesce(l.sender, t.owner) = $1 ORDER BY t.updated_at DESC LIMIT $2`, me.Handle, limit)
 	} else {
-		tasks, err = p.queryTasks(r.Context(), false, `ORDER BY t.updated_at DESC LIMIT $1`, limit)
+		tasks, err = p.queryTasks(r.Context(), false, `WHERE `+visibleSQL(2)+` ORDER BY t.updated_at DESC LIMIT $1`, limit, s.handles)
 	}
 	if err != nil {
 		apiError(w, http.StatusInternalServerError, err.Error())
@@ -452,9 +472,9 @@ func (p *Platform) handleTasks(w http.ResponseWriter, r *http.Request, me *direc
 	writeJSON(w, http.StatusOK, map[string]any{"tasks": tasks})
 }
 
-func (p *Platform) handleTask(w http.ResponseWriter, r *http.Request, me *directory.User) {
+func (p *Platform) handleTask(w http.ResponseWriter, r *http.Request, me *directory.User, s *scope) {
 	id := r.PathValue("id")
-	tasks, err := p.queryTasks(r.Context(), true, `WHERE t.id = $1`, id)
+	tasks, err := p.queryTasks(r.Context(), true, `WHERE t.id = $1 AND `+visibleSQL(2), id, s.handles)
 	if err != nil {
 		apiError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -510,7 +530,7 @@ func (b *sendBody) parts() []*a2a.Part {
 }
 
 // handleSend sends a message from me to an address, as a new task or into one of my tasks.
-func (p *Platform) handleSend(w http.ResponseWriter, r *http.Request, me *directory.User) {
+func (p *Platform) handleSend(w http.ResponseWriter, r *http.Request, me *directory.User, _ *scope) {
 	var body sendBody
 	if err := decode(r, &body); err != nil {
 		apiError(w, http.StatusBadRequest, "send {to, text, data, taskId, contextId}")
@@ -548,21 +568,22 @@ type answerBody struct {
 // handleAnswer answers a task waiting for input: a person answering a task addressed to
 // them, or the sender answering the agent's question. With a structured input request,
 // data is the answer object.
-func (p *Platform) handleAnswer(w http.ResponseWriter, r *http.Request, me *directory.User) {
+func (p *Platform) handleAnswer(w http.ResponseWriter, r *http.Request, me *directory.User, s *scope) {
 	var body answerBody
 	if err := decode(r, &body); err != nil {
 		apiError(w, http.StatusBadRequest, "send {text, data, decision}")
 		return
 	}
-	if status, err := p.answer(r.Context(), me, r.PathValue("id"), &body); err != nil {
+	if status, err := p.answer(r.Context(), me, s, r.PathValue("id"), &body); err != nil {
 		apiError(w, status, err.Error())
 		return
 	}
 	w.WriteHeader(http.StatusAccepted)
 }
 
-// answer answers task id as me. On failure it returns the HTTP status to report.
-func (p *Platform) answer(ctx context.Context, me *directory.User, id string, body *answerBody) (int, error) {
+// answer answers task id as me. With s, admins of the workspace may answer for the
+// workspace's agents. On failure it returns the HTTP status to report.
+func (p *Platform) answer(ctx context.Context, me *directory.User, s *scope, id string, body *answerBody) (int, error) {
 	stored, tenant, err := p.Tasks.Load(ctx, a2a.TaskID(id))
 	if err != nil {
 		return statusOf(err), err
@@ -586,7 +607,7 @@ func (p *Platform) answer(ctx context.Context, me *directory.User, id string, bo
 		if body.Decision == "reject" {
 			attrs[relay.AttrDecision] = "reject"
 		}
-	case stored.User == me.Handle, me.Admin:
+	case stored.User == me.Handle, s != nil && s.can(directory.RoleAdmin) && s.in[stored.User]:
 	default:
 		return http.StatusForbidden, errors.New("this task doesn't wait for you")
 	}
@@ -669,7 +690,7 @@ func (p *Platform) handleDecisionAnswer(w http.ResponseWriter, r *http.Request) 
 	}
 	status, err := http.StatusGone, errors.New(linkGone)
 	if u, uerr := p.Directory.UserByHandle(ctx, link.Handle); uerr == nil {
-		status, err = p.answer(ctx, u, link.TaskID, &body)
+		status, err = p.answer(ctx, u, nil, link.TaskID, &body)
 	}
 	if err != nil {
 		// The answer didn't go through, so the link still works.
@@ -717,13 +738,15 @@ func (p *Platform) handleTestNotification(w http.ResponseWriter, r *http.Request
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func (p *Platform) handleCancel(w http.ResponseWriter, r *http.Request, me *directory.User) {
+// handleCancel cancels a task: its sender or recipient may, and so may the workspace's
+// admins for the workspace's tasks.
+func (p *Platform) handleCancel(w http.ResponseWriter, r *http.Request, me *directory.User, s *scope) {
 	stored, tenant, err := p.Tasks.Load(r.Context(), a2a.TaskID(r.PathValue("id")))
 	if err != nil {
 		apiError(w, statusOf(err), err.Error())
 		return
 	}
-	if stored.User != me.Handle && tenant != me.Handle && !me.Admin {
+	if stored.User != me.Handle && tenant != me.Handle && !(s.can(directory.RoleAdmin) && s.sees(stored.User, tenant)) {
 		apiError(w, http.StatusForbidden, "only the sender can cancel this task")
 		return
 	}
@@ -735,35 +758,79 @@ func (p *Platform) handleCancel(w http.ResponseWriter, r *http.Request, me *dire
 	writeJSON(w, http.StatusOK, map[string]any{"task": task})
 }
 
-// handleGraph is the snapshot the live graph starts from; /api/events continues it.
-func (p *Platform) handleGraph(w http.ResponseWriter, r *http.Request, me *directory.User) {
+// handleGraph is the snapshot the live graph starts from; /api/events continues it. It
+// has the workspace's addresses, and the outside ones its tasks went to or came from.
+func (p *Platform) handleGraph(w http.ResponseWriter, r *http.Request, me *directory.User, s *scope) {
 	ctx := r.Context()
 	seq, err := p.Activity.Last(ctx)
 	if err != nil {
 		apiError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	views, err := p.addressViews(ctx)
+	views, err := p.addressViews(ctx, s)
 	if err != nil {
 		apiError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	tasks, err := p.queryTasks(ctx, false, `WHERE t.updated_at > now() - interval '24 hours' ORDER BY t.updated_at DESC LIMIT 300`)
+	tasks, err := p.queryTasks(ctx, false, `WHERE t.updated_at > now() - interval '24 hours' AND `+visibleSQL(1)+` ORDER BY t.updated_at DESC LIMIT 300`, s.handles)
 	if err != nil {
+		apiError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if views, err = p.withExternal(ctx, s, views, tasks); err != nil {
 		apiError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"seq": seq, "addresses": views, "tasks": tasks})
 }
 
+// withExternal adds the addresses of other workspaces that tasks went to or came from,
+// marked external and without their tunnels.
+func (p *Platform) withExternal(ctx context.Context, s *scope, views []*AddressView, tasks []*TaskView) ([]*AddressView, error) {
+	seen := map[string]bool{}
+	for _, t := range tasks {
+		for _, h := range []string{t.Sender, t.Recipient} {
+			if h == "" || s.in[h] || seen[h] {
+				continue
+			}
+			seen[h] = true
+			a, err := p.Directory.Address(ctx, h)
+			if errors.Is(err, directory.ErrNotFound) {
+				continue
+			}
+			if err != nil {
+				return nil, err
+			}
+			v := p.addressView(a)
+			v.External, v.Sessions, v.Stats = true, []SessionView{}, mailbox.Stats{}
+			views = append(views, v)
+		}
+	}
+	return views, nil
+}
+
+// handleEvents streams the workspace's activity. The workspace's addresses are looked
+// up again whenever an address changes, so new agents and members show up.
+func (p *Platform) handleEvents(w http.ResponseWriter, r *http.Request, me *directory.User, s *scope) {
+	ctx := r.Context()
+	p.Activity.Stream(w, r, func(e *activity.Entry) bool {
+		if e.Kind == activity.KindAddress {
+			if fresh, err := p.scopeFor(ctx, s.Workspace); err == nil {
+				s = fresh
+			}
+		}
+		return s.entry(e)
+	})
+}
+
 // handleActivity pages through the activity log (?since=seq&limit=n), for replay.
-func (p *Platform) handleActivity(w http.ResponseWriter, r *http.Request, me *directory.User) {
+func (p *Platform) handleActivity(w http.ResponseWriter, r *http.Request, me *directory.User, s *scope) {
 	since, _ := strconv.ParseInt(r.URL.Query().Get("since"), 10, 64)
 	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
 	if limit <= 0 || limit > 5000 {
 		limit = 2000
 	}
-	entries, err := p.Activity.Since(r.Context(), since, limit)
+	entries, err := p.Activity.SinceFor(r.Context(), since, limit, s.handles)
 	if err != nil {
 		apiError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -780,7 +847,7 @@ func (p *Platform) handleActivity(w http.ResponseWriter, r *http.Request, me *di
 func (p *Platform) handleRegistrySearch(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	skill, text, all := strings.ToLower(q.Get("skill")), strings.ToLower(q.Get("q")), q.Get("all") == "1"
-	views, err := p.addressViews(r.Context())
+	views, err := p.addressViews(r.Context(), nil)
 	if err != nil {
 		apiError(w, http.StatusInternalServerError, err.Error())
 		return

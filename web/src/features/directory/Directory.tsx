@@ -1,17 +1,18 @@
 import { ExternalLink, MessageSquare, Search, UserPlus } from 'lucide-react'
-import { useEffect, useState, type FormEvent } from 'react'
+import { useEffect, useState } from 'react'
 import { Link } from 'react-router'
-import { api, type Invite } from '@/lib/api'
+import { InviteForm } from '@/features/workspaces/Workspaces'
 import { cn } from '@/lib/cn'
 import { useView } from '@/store/live'
-import { useSession } from '@/store/session'
+import { useCan, useSession } from '@/store/session'
 import { Button } from '@/ui/AnswerForm'
 import { Avatar } from '@/ui/Avatar'
-import { CodeLine, Copy } from '@/ui/Copy'
+import { Copy } from '@/ui/Copy'
 
-/** Everyone on this server, people and agents, with their cards and skills. */
+/** Everyone in the workspace, people and agents, with their cards and skills. */
 export function Directory() {
   const { addresses, user, refreshAddresses } = useSession()
+  const admin = useCan('admin')
   const model = useView()
   const [q, setQ] = useState('')
   const [kind, setKind] = useState<'all' | 'agent' | 'human'>('all')
@@ -33,15 +34,19 @@ export function Directory() {
         <header className="flex flex-wrap items-end justify-between gap-4">
           <div>
             <h1 className="text-xl font-extrabold">Directory</h1>
-            <p className="mt-1 text-sm text-muted">People and agents are both addresses with an A2A agent card. Anyone can delegate to either.</p>
+            <p className="mt-1 text-sm text-muted">The workspace’s people and agents. Both are addresses with an A2A agent card, and anyone can delegate to either.</p>
           </div>
-          {user?.admin && (
+          {admin && (
             <Button icon={<UserPlus size={14} />} onClick={() => setInviting(!inviting)}>
               Invite a person
             </Button>
           )}
         </header>
-        {inviting && <Invite />}
+        {inviting && (
+          <div className="card p-5">
+            <InviteForm />
+          </div>
+        )}
         <div className="flex flex-wrap items-center gap-2">
           <label className="flex min-w-[260px] flex-1 items-center gap-2">
             <Search size={15} className="text-muted" />
@@ -92,49 +97,6 @@ export function Directory() {
           })}
         </div>
       </div>
-    </div>
-  )
-}
-
-/** Invites someone by email: they open a one-time link, pick their handle and join. */
-function Invite() {
-  const [email, setEmail] = useState('')
-  const [error, setError] = useState('')
-  const [busy, setBusy] = useState(false)
-  const [sent, setSent] = useState<Invite>()
-  const submit = async (e: FormEvent) => {
-    e.preventDefault()
-    setBusy(true)
-    setError('')
-    try {
-      setSent(await api.createInvite(email))
-      setEmail('')
-    } catch (err) {
-      setError((err as Error).message)
-    } finally {
-      setBusy(false)
-    }
-  }
-  return (
-    <div className="card space-y-3 p-5">
-      <form onSubmit={submit} className="flex flex-wrap items-end gap-3">
-        <label className="flex min-w-[240px] flex-1 flex-col gap-1 text-xs font-semibold text-muted">
-          Email
-          <input className="input" type="email" required placeholder="grace@example.com" value={email} onChange={(e) => setEmail(e.target.value)} autoFocus />
-        </label>
-        <Button type="submit" disabled={busy}>
-          Send invitation
-        </Button>
-      </form>
-      {error && <p className="text-xs font-semibold text-bad">{error}</p>}
-      {sent && (
-        <div className="space-y-1.5 text-xs">
-          <p className="font-semibold text-good">
-            {sent.emailed ? `Invitation emailed to ${sent.email}.` : `Send ${sent.email} this link (this server can’t send email).`} It works once, for 7 days.
-          </p>
-          {sent.link && <CodeLine text={sent.link} />}
-        </div>
-      )}
     </div>
   )
 }

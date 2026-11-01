@@ -1,7 +1,7 @@
 // The live store: the server snapshot, kept current by the SSE stream, plus the replay of
 // one run on the graph. Views read `view()`, which is the replayed model while a replay is open.
 import { create } from 'zustand'
-import { api, type Entry } from '@/lib/api'
+import { api, eventsURL, type Entry } from '@/lib/api'
 import { emptyModel, FEED_MAX, fold, fromSnapshot, reduce, type Model } from '@/store/model'
 
 export type Speed = 1 | 4 | 16
@@ -51,7 +51,10 @@ export const useLive = create<LiveState>((set, get) => ({
           const known = entries.filter((e) => e.seq <= g.seq && e.kind !== 'presence')
           set((s) => ({ model: { ...s.model, feed: [...known, ...s.model.feed.filter((e) => e.seq > g.seq)].slice(-FEED_MAX) } }))
         })
-        source = new EventSource(`/api/events?since=${g.seq}`)
+        source = new EventSource(eventsURL(g.seq))
+        // A page left for another one may stay alive in the back/forward cache; its open
+        // stream would use up one of the browser's few connections to this server.
+        addEventListener('pagehide', () => source?.close(), { once: true })
         source.onopen = () => set({ status: 'live' })
         source.onerror = () => set({ status: 'reconnecting' })
         source.addEventListener('activity', (ev) => get().apply(JSON.parse((ev as MessageEvent<string>).data)))

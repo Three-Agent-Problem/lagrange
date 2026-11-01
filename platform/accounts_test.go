@@ -170,7 +170,7 @@ func TestInviteAccept(t *testing.T) {
 		t.Fatalf("invite = %+v", inv)
 	}
 	mail := out.next(t, 1)
-	if mail.to != "grace@example.com" || mail.subject != "Ada invited you to Lagrange" {
+	if mail.to != "grace@example.com" || mail.subject != "Ada invited you to Default on Lagrange" {
 		t.Fatalf("mail = %+v", mail)
 	}
 	token := authLink(t, mail.body, "invite")

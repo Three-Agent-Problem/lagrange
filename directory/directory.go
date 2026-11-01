@@ -76,6 +76,9 @@ type Address struct {
 	Description string `json:"description"`
 	// Endpoint is the agent's public base URL. Empty means it connects through a tunnel.
 	Endpoint string `json:"endpoint,omitempty"`
+	// WorkspaceID is the agent's workspace. People's addresses have none: they belong to
+	// every workspace the person is a member of.
+	WorkspaceID int64 `json:"workspaceId,omitempty"`
 	// Card is the agent's own card as last fetched from the agent.
 	Card      *a2a.AgentCard `json:"card,omitempty"`
 	CreatedAt time.Time      `json:"createdAt"`
@@ -97,10 +100,19 @@ type Directory struct {
 // New returns a directory on db.
 func New(db *pg.DB) *Directory { return &Directory{db: db} }
 
-// CreateUser creates a person and their human address. An admin vouches for the email,
-// so it counts as verified.
+// CreateUser creates a person and their human address in the default workspace (admins
+// as owners). An admin vouches for the email, so it counts as verified.
 func (d *Directory) CreateUser(ctx context.Context, email, name, handle, password string, admin bool) (*User, error) {
-	return d.Register(ctx, Registration{Email: email, Name: name, Handle: handle, Password: password, Admin: admin, Verified: true})
+	ws, err := d.Default(ctx)
+	if err != nil {
+		return nil, err
+	}
+	role := RoleMember
+	if admin {
+		role = RoleOwner
+	}
+	return d.Register(ctx, Registration{Email: email, Name: name, Handle: handle, Password: password, Admin: admin, Verified: true,
+		Workspace: ws.ID, Role: role})
 }
 
 // Registration is a new person.
@@ -113,6 +125,10 @@ type Registration struct {
 	Verified bool
 	// Provider and Subject link an OAuth account at the same time.
 	Provider, Subject string
+	// Workspace, with Role, is the workspace the person joins. Zero gives them a
+	// workspace of their own, as its owner.
+	Workspace int64
+	Role      string
 }
 
 // Register creates a person, their human address and, with Provider, their identity.
@@ -151,7 +167,23 @@ func (d *Directory) Register(ctx context.Context, r Registration) (*User, error)
 				return err
 			}
 		}
-		_, err := tx.Exec(ctx, `INSERT INTO addresses (handle, kind, owner_id, display_name) VALUES ($1, 'human', $2, $3)`, r.Handle, u.ID, r.Name)
+		if _, err := tx.Exec(ctx, `INSERT INTO addresses (handle, kind, owner_id, display_name) VALUES ($1, 'human', $2, $3)`, r.Handle, u.ID, r.Name); err != nil {
+			return err
+		}
+		ws, role := r.Workspace, r.Role
+		if ws == 0 {
+			// The handle is free among addresses; a workspace may still have that slug.
+			if err := tx.QueryRow(ctx, `INSERT INTO workspaces (slug, name)
+				VALUES (CASE WHEN EXISTS (SELECT 1 FROM workspaces WHERE slug = $1) THEN $1 || '-' || substr(md5(random()::text), 1, 6) ELSE $1 END, $2)
+				RETURNING id`, r.Handle, r.Name).Scan(&ws); err != nil {
+				return err
+			}
+			role = RoleOwner
+		}
+		if !ValidRole(role) {
+			return fmt.Errorf("directory: no such role %q", role)
+		}
+		_, err := tx.Exec(ctx, `INSERT INTO members (workspace_id, user_id, role) VALUES ($1, $2, $3)`, ws, u.ID, role)
 		return err
 	})
 	if pg.IsUniqueViolation(err) {
@@ -260,7 +292,8 @@ func (d *Directory) userWhere(ctx context.Context, cond string, arg any) (*User,
 	return u, err
 }
 
-// CreateAgent creates an agent address owned by ownerID.
+// CreateAgent creates an agent address in a.WorkspaceID (the default workspace when
+// zero), owned by a.OwnerID.
 func (d *Directory) CreateAgent(ctx context.Context, a *Address) error {
 	if !HandlePattern.MatchString(a.Handle) {
 		return ErrInvalidHandle
@@ -269,9 +302,17 @@ func (d *Directory) CreateAgent(ctx context.Context, a *Address) error {
 	if a.OwnerID != 0 {
 		owner = &a.OwnerID
 	}
-	err := d.db.Pool.QueryRow(ctx, `INSERT INTO addresses (handle, kind, owner_id, display_name, description, endpoint)
-		VALUES ($1, 'agent', $2, $3, $4, $5) RETURNING created_at`,
-		a.Handle, owner, a.DisplayName, a.Description, a.Endpoint).Scan(&a.CreatedAt)
+	if a.WorkspaceID == 0 {
+		ws, err := d.Default(ctx)
+		if err != nil {
+			return err
+		}
+		a.WorkspaceID = ws.ID
+	}
+	ws := a.WorkspaceID
+	err := d.db.Pool.QueryRow(ctx, `INSERT INTO addresses (handle, kind, owner_id, display_name, description, endpoint, workspace_id)
+		VALUES ($1, 'agent', $2, $3, $4, $5, $6) RETURNING created_at`,
+		a.Handle, owner, a.DisplayName, a.Description, a.Endpoint, ws).Scan(&a.CreatedAt)
 	if pg.IsUniqueViolation(err) {
 		return ErrTaken
 	}
@@ -279,12 +320,12 @@ func (d *Directory) CreateAgent(ctx context.Context, a *Address) error {
 	return err
 }
 
-const addressColumns = `handle, kind, coalesce(owner_id, 0), display_name, description, endpoint, card, created_at`
+const addressColumns = `handle, kind, coalesce(owner_id, 0), coalesce(workspace_id, 0), display_name, description, endpoint, card, created_at`
 
 func scanAddress(row pgx.Row) (*Address, error) {
 	var a Address
 	var card []byte
-	if err := row.Scan(&a.Handle, &a.Kind, &a.OwnerID, &a.DisplayName, &a.Description, &a.Endpoint, &card, &a.CreatedAt); err != nil {
+	if err := row.Scan(&a.Handle, &a.Kind, &a.OwnerID, &a.WorkspaceID, &a.DisplayName, &a.Description, &a.Endpoint, &card, &a.CreatedAt); err != nil {
 		return nil, err
 	}
 	if len(card) > 0 {

@@ -1,6 +1,6 @@
 import { CheckCircle2, Link2Off, MailCheck } from 'lucide-react'
 import { useEffect, useState, type FormEvent } from 'react'
-import { api, type AuthMethods, type Invite } from '@/lib/api'
+import { api, type AuthMethods, type Invite, type User } from '@/lib/api'
 import { useSession } from '@/store/session'
 import { HANDLE_PATTERN, suggestHandle } from './handle'
 import { AuthShell, Field, Problem, Providers, Submit } from './parts'
@@ -155,12 +155,14 @@ function AcceptInvite({ token }: { token: string }) {
   }
   if (gone) return <Gone text={gone} />
   if (!invite) return <AuthShell title="Opening your invitation…">{null}</AuthShell>
+  if (invite.existing) return <JoinExisting token={token} invite={invite} auth={auth} />
   return (
     <AuthShell
       title={invite.invitedBy ? `${invite.invitedBy} invited you` : 'You’re invited'}
       subtitle={
         <>
-          Join as <span className="font-semibold text-ink">{invite.email}</span>. You get an address that agents and people can send work to.
+          Join <span className="font-semibold text-ink">{invite.workspace}</span> as <span className="font-semibold text-ink">{invite.email}</span>. You get an address
+          that agents and people can send work to.
         </>
       }
     >
@@ -188,6 +190,83 @@ function AcceptInvite({ token }: { token: string }) {
         <Field label="Password" type="password" autoComplete="new-password" minLength={8} required value={f.password} onChange={(e) => setF({ ...f, password: e.target.value })} hint="At least 8 characters." />
         <Problem text={error} />
         <Submit busy={busy}>Join</Submit>
+      </form>
+    </AuthShell>
+  )
+}
+
+/** Remembers the workspace an invitation joined, so the app opens in it. */
+async function openJoined(name: string) {
+  try {
+    const { workspaces } = await api.workspaces()
+    const ws = workspaces.filter((w) => w.name === name).at(-1)
+    if (ws) localStorage.setItem('lagrange-workspace', ws.slug)
+  } catch {
+    /* the oldest workspace it is */
+  }
+  enter()
+}
+
+/** An invitation for an email that has an account: log in as it (if needed), then join. */
+function JoinExisting({ token, invite, auth }: { token: string; invite: Invite; auth?: AuthMethods }) {
+  const [me, setMe] = useState<User | null>()
+  const [password, setPassword] = useState('')
+  const [error, setError] = useState('')
+  const [busy, setBusy] = useState(false)
+  useEffect(() => {
+    api.me().then(
+      (m) => setMe(m.user),
+      () => setMe(null),
+    )
+  }, [])
+  const join = async (e?: FormEvent) => {
+    e?.preventDefault()
+    setBusy(true)
+    setError('')
+    try {
+      if (!me) await api.login(invite.email, password)
+      await api.acceptInvite(token)
+      await openJoined(invite.workspace)
+    } catch (err) {
+      setError((err as Error).message)
+      setBusy(false)
+    }
+  }
+  const title = `${invite.invitedBy || 'Someone'} invited you to ${invite.workspace}`
+  const subtitle = (
+    <>
+      As <span className="font-semibold text-ink">{invite.role}</span>, with your account <span className="font-semibold text-ink">{invite.email}</span>.
+    </>
+  )
+  if (me === undefined) return <AuthShell title="Opening your invitation…">{null}</AuthShell>
+  if (me && me.email !== invite.email)
+    return (
+      <AuthShell title={title} subtitle={subtitle}>
+        <p className="text-sm">
+          You’re logged in as <span className="font-mono">@{me.handle}</span> ({me.email}). Log out, then open this link again to join as {invite.email}.
+        </p>
+        <button className="text-xs font-semibold text-accent" onClick={() => void api.logout().then(() => location.reload())}>
+          Log out
+        </button>
+      </AuthShell>
+    )
+  if (me)
+    return (
+      <AuthShell title={title} subtitle={subtitle}>
+        <Problem text={error} />
+        <button onClick={() => void join()} disabled={busy} className="w-full rounded-lg bg-accent py-2 text-sm font-bold text-accent-ink shadow-card disabled:opacity-60">
+          Join {invite.workspace}
+        </button>
+      </AuthShell>
+    )
+  return (
+    <AuthShell title={title} subtitle={subtitle}>
+      <Providers auth={auth} query={`?invite=${encodeURIComponent(token)}`} />
+      <form onSubmit={join} className="space-y-4">
+        <Field label="Email" type="email" value={invite.email} disabled />
+        <Field label="Password" type="password" autoComplete="current-password" required autoFocus value={password} onChange={(e) => setPassword(e.target.value)} />
+        <Problem text={error} />
+        <Submit busy={busy}>Log in and join</Submit>
       </form>
     </AuthShell>
   )

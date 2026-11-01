@@ -1,6 +1,7 @@
 import { Bell, KeyRound, Link2, Mail, Send } from 'lucide-react'
 import { useEffect, useState, type FormEvent } from 'react'
 import { api, type NotificationSettingsView } from '@/lib/api'
+import { Members } from '@/features/workspaces/Workspaces'
 import { useSession } from '@/store/session'
 import { Button } from '@/ui/AnswerForm'
 import { Avatar } from '@/ui/Avatar'
@@ -12,7 +13,7 @@ export function Settings() {
       <div className="mx-auto flex max-w-2xl flex-col gap-5 px-4 py-8 sm:px-6">
         <div>
           <h1 className="text-xl font-extrabold">Settings</h1>
-          <p className="mt-1 text-sm text-muted">Your account, and how Lagrange reaches you when a task waits on you.</p>
+          <p className="mt-1 text-sm text-muted">Your account, your workspace, and how Lagrange reaches you when a task waits on you.</p>
         </div>
         <div className="card flex items-center gap-3 p-5">
           <Avatar handle={user.handle} kind="human" name={user.name} size={44} />
@@ -23,6 +24,7 @@ export function Settings() {
             </p>
           </div>
         </div>
+        <Members />
         <Notifications />
         <Password />
         <LinkedAccounts />

@@ -16,13 +16,15 @@ import (
 )
 
 // A task waiting on someone (an approval, a question, an account to connect) blocks its
-// run until they answer. The team's WaitPolicy reminds them, escalates to someone else,
-// and finally cancels the task; the waiting board shows all of it.
+// run until they answer. The workspace's WaitPolicy reminds them, escalates to someone
+// else, and finally cancels the task; the waiting board shows all of it. A wait follows
+// the policy of a workspace the person (or agent) waited on belongs to, or, for an
+// outside caller, the asker's.
 
 // maxReminders caps the policy's reminders per wait.
 const maxReminders = 3
 
-// WaitPolicy is the team's rules for waiting tasks. Delays are in seconds; nil is off.
+// WaitPolicy is a workspace's rules for waiting tasks. Delays are in seconds; nil is off.
 type WaitPolicy struct {
 	RemindAfter   *int64 `json:"remindAfter"`
 	EscalateAfter *int64 `json:"escalateAfter"`
@@ -36,9 +38,9 @@ func (w WaitPolicy) off() bool {
 
 func secs(s *int64) time.Duration { return time.Duration(*s) * time.Second }
 
-func (p *Platform) waitPolicy(ctx context.Context) (WaitPolicy, error) {
+func (p *Platform) waitPolicy(ctx context.Context, workspaceID int64) (WaitPolicy, error) {
 	var w WaitPolicy
-	err := p.DB.Pool.QueryRow(ctx, `SELECT remind_after_s, escalate_after_s, escalate_to, cancel_after_s FROM wait_policy WHERE id = 1`).
+	err := p.DB.Pool.QueryRow(ctx, `SELECT remind_after_s, escalate_after_s, escalate_to, cancel_after_s FROM wait_policy WHERE workspace_id = $1`, workspaceID).
 		Scan(&w.RemindAfter, &w.EscalateAfter, &w.EscalateTo, &w.CancelAfter)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return WaitPolicy{}, nil
@@ -96,10 +98,11 @@ func (p *Platform) waits(ctx context.Context, ids []string) (map[string]*wait, e
 	return out, rows.Err()
 }
 
-// waitingTasks returns every task waiting on someone, with its wait (made up from the
-// task for waits that started before waits were recorded).
-func (p *Platform) waitingTasks(ctx context.Context) ([]*TaskView, map[string]*wait, error) {
-	tasks, err := p.queryTasks(ctx, true, `WHERE t.state IN ($1, $2) ORDER BY t.updated_at`, string(a2a.TaskStateInputRequired), string(a2a.TaskStateAuthRequired))
+// waitingTasks returns every task waiting on someone that s sees, with its wait (made up
+// from the task for waits that started before waits were recorded).
+func (p *Platform) waitingTasks(ctx context.Context, s *scope) ([]*TaskView, map[string]*wait, error) {
+	tasks, err := p.queryTasks(ctx, true, `WHERE t.state IN ($1, $2) AND `+visibleSQL(3)+` ORDER BY t.updated_at`,
+		string(a2a.TaskStateInputRequired), string(a2a.TaskStateAuthRequired), s.handles)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -178,22 +181,22 @@ func (p *Platform) people(ctx context.Context) (map[string]bool, error) {
 	return out, rows.Err()
 }
 
-// handleWaiting is the waiting board: every task waiting on someone, oldest first, with
-// the team's policy.
-func (p *Platform) handleWaiting(w http.ResponseWriter, r *http.Request, me *directory.User) {
+// handleWaiting is the waiting board: every task of the workspace waiting on someone,
+// oldest first, with the workspace's policy.
+func (p *Platform) handleWaiting(w http.ResponseWriter, r *http.Request, me *directory.User, s *scope) {
 	ctx := r.Context()
-	pol, err := p.waitPolicy(ctx)
+	pol, err := p.waitPolicy(ctx, s.ID)
 	if err == nil {
 		var tasks []*TaskView
 		var ws map[string]*wait
 		var people map[string]bool
-		if tasks, ws, err = p.waitingTasks(ctx); err == nil {
+		if tasks, ws, err = p.waitingTasks(ctx, s); err == nil {
 			people, err = p.people(ctx)
 			if err == nil {
 				out := []*WaitView{}
 				for _, t := range tasks {
 					wt := ws[string(t.ID)]
-					root, rerr := p.rootOf(ctx, string(t.ID))
+					root, rerr := p.rootOf(ctx, s, string(t.ID))
 					if rerr != nil {
 						root = string(t.ID)
 					}
@@ -213,8 +216,8 @@ func (p *Platform) handleWaiting(w http.ResponseWriter, r *http.Request, me *dir
 	apiError(w, http.StatusInternalServerError, err.Error())
 }
 
-func (p *Platform) handleWaitPolicy(w http.ResponseWriter, r *http.Request, me *directory.User) {
-	pol, err := p.waitPolicy(r.Context())
+func (p *Platform) handleWaitPolicy(w http.ResponseWriter, r *http.Request, me *directory.User, s *scope) {
+	pol, err := p.waitPolicy(r.Context(), s.ID)
 	if err != nil {
 		apiError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -222,11 +225,7 @@ func (p *Platform) handleWaitPolicy(w http.ResponseWriter, r *http.Request, me *
 	writeJSON(w, http.StatusOK, map[string]any{"policy": pol})
 }
 
-func (p *Platform) handleSetWaitPolicy(w http.ResponseWriter, r *http.Request, me *directory.User) {
-	if !me.Admin {
-		apiError(w, http.StatusForbidden, "only admins can change the team's waiting rules")
-		return
-	}
+func (p *Platform) handleSetWaitPolicy(w http.ResponseWriter, r *http.Request, me *directory.User, s *scope) {
 	var pol WaitPolicy
 	if err := decode(r, &pol); err != nil {
 		apiError(w, http.StatusBadRequest, "send {remindAfter, escalateAfter, escalateTo, cancelAfter} (seconds or null)")
@@ -239,15 +238,15 @@ func (p *Platform) handleSetWaitPolicy(w http.ResponseWriter, r *http.Request, m
 		}
 	}
 	if pol.EscalateTo != "" {
-		if _, err := p.Directory.UserByHandle(r.Context(), pol.EscalateTo); err != nil {
-			apiError(w, http.StatusBadRequest, "escalateTo must be a person's handle")
+		if _, err := p.Directory.UserByHandle(r.Context(), pol.EscalateTo); err != nil || !s.in[pol.EscalateTo] {
+			apiError(w, http.StatusBadRequest, "escalateTo must be the handle of a person in this workspace")
 			return
 		}
 	}
-	_, err := p.DB.Pool.Exec(r.Context(), `INSERT INTO wait_policy (id, remind_after_s, escalate_after_s, escalate_to, cancel_after_s, updated_by, updated_at)
-		VALUES (1, $1, $2, $3, $4, $5, now())
-		ON CONFLICT (id) DO UPDATE SET remind_after_s = $1, escalate_after_s = $2, escalate_to = $3, cancel_after_s = $4, updated_by = $5, updated_at = now()`,
-		pol.RemindAfter, pol.EscalateAfter, pol.EscalateTo, pol.CancelAfter, me.Handle)
+	_, err := p.DB.Pool.Exec(r.Context(), `INSERT INTO wait_policy (workspace_id, remind_after_s, escalate_after_s, escalate_to, cancel_after_s, updated_by, updated_at)
+		VALUES ($6, $1, $2, $3, $4, $5, now())
+		ON CONFLICT (workspace_id) DO UPDATE SET remind_after_s = $1, escalate_after_s = $2, escalate_to = $3, cancel_after_s = $4, updated_by = $5, updated_at = now()`,
+		pol.RemindAfter, pol.EscalateAfter, pol.EscalateTo, pol.CancelAfter, me.Handle, s.ID)
 	if err != nil {
 		apiError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -256,10 +255,10 @@ func (p *Platform) handleSetWaitPolicy(w http.ResponseWriter, r *http.Request, m
 }
 
 // handleRemind reminds the person a task waits on now, at most once a minute.
-func (p *Platform) handleRemind(w http.ResponseWriter, r *http.Request, me *directory.User) {
+func (p *Platform) handleRemind(w http.ResponseWriter, r *http.Request, me *directory.User, s *scope) {
 	ctx := r.Context()
 	id := r.PathValue("id")
-	tasks, ws, err := p.waitingTasks(ctx)
+	tasks, ws, err := p.waitingTasks(ctx, s)
 	if err != nil {
 		apiError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -345,12 +344,14 @@ func (p *Platform) runWaitTimers(ctx context.Context, tick time.Duration) {
 	}
 }
 
+// applyWaitPolicy applies each workspace's policy to the waits on its addresses. A wait
+// on someone in several workspaces follows the oldest workspace's policy that is on.
 func (p *Platform) applyWaitPolicy(ctx context.Context) error {
-	pol, err := p.waitPolicy(ctx)
-	if err != nil || pol.off() {
+	rows, err := p.DB.Pool.Query(ctx, `SELECT workspace_id FROM wait_policy ORDER BY workspace_id`)
+	if err != nil {
 		return err
 	}
-	tasks, ws, err := p.waitingTasks(ctx)
+	ids, err := pgx.CollectRows(rows, pgx.RowTo[int64])
 	if err != nil {
 		return err
 	}
@@ -358,9 +359,43 @@ func (p *Platform) applyWaitPolicy(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	belongs, err := p.Directory.HandleWorkspaces(ctx)
+	if err != nil {
+		return err
+	}
+	done := map[string]bool{}
+	for _, id := range ids {
+		pol, err := p.waitPolicy(ctx, id)
+		if err != nil {
+			return err
+		}
+		if pol.off() {
+			continue
+		}
+		s, err := p.scopeFor(ctx, &directory.Workspace{ID: id})
+		if err != nil {
+			return err
+		}
+		if err := p.applyPolicy(ctx, s, pol, people, belongs, done); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (p *Platform) applyPolicy(ctx context.Context, s *scope, pol WaitPolicy, people map[string]bool, belongs map[string][]int64, done map[string]bool) error {
+	tasks, ws, err := p.waitingTasks(ctx, s)
+	if err != nil {
+		return err
+	}
 	now := time.Now()
 	for _, t := range tasks {
 		wt := ws[string(t.ID)]
+		governs := s.in[wt.Who] || len(belongs[wt.Who]) == 0 && s.in[wt.Asker]
+		if !governs || done[wt.TaskID] {
+			continue
+		}
+		done[wt.TaskID] = true
 		v := &WaitView{Who: wt.Who, Person: people[wt.Who], Since: wt.Since, Reminders: wt.Reminders, RemindedAt: wt.RemindedAt, EscalatedAt: wt.EscalatedAt}
 		v.next(pol)
 		// Make sure waits from before waits were recorded can be claimed.

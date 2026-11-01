@@ -15,7 +15,7 @@ import (
 
 // A conversation is everything two addresses said to each other, either way round:
 // tasks one sent the other and plain messages. The inbox shows a person's own; the
-// "between agents" view shows anyone's, since the whole team sees the live graph.
+// "between agents" view shows those of the workspace's addresses, as the live graph does.
 
 // outside is how the web app names calls from outside clients (no sender).
 const outside = "~outside"
@@ -46,8 +46,9 @@ func pair(a, b string) (string, string) {
 	return a, b
 }
 
-// conversations lists every pair of addresses that talked, latest first.
-func (p *Platform) conversations(ctx context.Context) ([]*Conversation, error) {
+// conversations lists every pair of addresses that talked where s sees one of them,
+// latest first.
+func (p *Platform) conversations(ctx context.Context, s *scope) ([]*Conversation, error) {
 	by := map[[2]string]*Conversation{}
 	get := func(s, r string) *Conversation {
 		a, b := pair(s, r)
@@ -60,7 +61,7 @@ func (p *Platform) conversations(ctx context.Context) ([]*Conversation, error) {
 	}
 	rows, err := p.DB.Pool.Query(ctx, `SELECT sender, recipient, count(DISTINCT task_id) FILTER (WHERE kind = 'task'),
 			count(*) FILTER (WHERE kind = 'message'), max(at)
-		FROM activity WHERE kind IN ('task', 'message') AND recipient <> '' GROUP BY 1, 2`)
+		FROM activity WHERE kind IN ('task', 'message') AND recipient <> '' AND (sender = ANY($1) OR recipient = ANY($1)) GROUP BY 1, 2`, s.handles)
 	if err != nil {
 		return nil, err
 	}
@@ -86,8 +87,8 @@ func (p *Platform) conversations(ctx context.Context) ([]*Conversation, error) {
 
 	// The latest thing each side said: a task's question or answer, or a message.
 	rows, err = p.DB.Pool.Query(ctx, `SELECT DISTINCT ON (sender, recipient) sender, recipient, at, summary, coalesce(data->>'reply', '')
-		FROM activity WHERE kind IN ('task', 'message', 'input') AND recipient <> '' AND summary <> ''
-		ORDER BY sender, recipient, seq DESC`)
+		FROM activity WHERE kind IN ('task', 'message', 'input') AND recipient <> '' AND summary <> '' AND (sender = ANY($1) OR recipient = ANY($1))
+		ORDER BY sender, recipient, seq DESC`, s.handles)
 	if err != nil {
 		return nil, err
 	}
@@ -119,8 +120,8 @@ func (p *Platform) conversations(ctx context.Context) ([]*Conversation, error) {
 	}
 
 	rows, err = p.DB.Pool.Query(ctx, `SELECT coalesce(l.sender, t.owner), t.tenant, count(*) FROM tasks t
-		LEFT JOIN task_links l ON l.task_id = t.id WHERE t.state IN ($1, $2) GROUP BY 1, 2`,
-		string(a2a.TaskStateInputRequired), string(a2a.TaskStateAuthRequired))
+		LEFT JOIN task_links l ON l.task_id = t.id WHERE t.state IN ($1, $2) AND `+visibleSQL(3)+` GROUP BY 1, 2`,
+		string(a2a.TaskStateInputRequired), string(a2a.TaskStateAuthRequired), s.handles)
 	if err != nil {
 		return nil, err
 	}
@@ -148,8 +149,8 @@ func (p *Platform) conversations(ctx context.Context) ([]*Conversation, error) {
 	return out, nil
 }
 
-func (p *Platform) handleConversations(w http.ResponseWriter, r *http.Request, me *directory.User) {
-	cs, err := p.conversations(r.Context())
+func (p *Platform) handleConversations(w http.ResponseWriter, r *http.Request, me *directory.User, s *scope) {
+	cs, err := p.conversations(r.Context(), s)
 	if err != nil {
 		apiError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -162,7 +163,7 @@ const maxThread = 100
 
 // handleConversation is what two addresses said to each other: their latest tasks (in
 // full) and plain messages, oldest first.
-func (p *Platform) handleConversation(w http.ResponseWriter, r *http.Request, me *directory.User) {
+func (p *Platform) handleConversation(w http.ResponseWriter, r *http.Request, me *directory.User, s *scope) {
 	ctx := r.Context()
 	a, b := r.PathValue("a"), r.PathValue("b")
 	if a == outside {
@@ -173,6 +174,10 @@ func (p *Platform) handleConversation(w http.ResponseWriter, r *http.Request, me
 	}
 	if strings.TrimSpace(a) == "" && strings.TrimSpace(b) == "" {
 		apiError(w, http.StatusBadRequest, "name two addresses")
+		return
+	}
+	if !s.sees(a, b) {
+		apiError(w, http.StatusNotFound, "neither address is in this workspace")
 		return
 	}
 	tasks, err := p.queryTasks(ctx, true, `WHERE (coalesce(l.sender, t.owner) = $1 AND t.tenant = $2) OR (coalesce(l.sender, t.owner) = $2 AND t.tenant = $1)
