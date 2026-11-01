@@ -39,9 +39,11 @@ func TestWorkspaceIsolation(t *testing.T) {
 	ada.do(http.MethodPost, "/api/send", map[string]string{"to": "@buyer", "text": "200 hoodies"}, http.StatusOK, nil)
 
 	var runs runList
-	waitFor(t, "Ada's run to end", func() bool {
+	// The run ends before every link of Northwind's internal call may be recorded, so
+	// wait for the whole run, not just its end.
+	waitFor(t, "Ada's run to end with Northwind's call hidden", func() bool {
 		ada.do(http.MethodGet, "/api/runs?status=done", nil, http.StatusOK, &runs)
-		return len(runs.Runs) == 1
+		return len(runs.Runs) == 1 && runs.Runs[0].Hidden == 1
 	})
 	if r := runs.Runs[0]; r.Tasks != 2 || r.Hidden != 1 || slices.Contains(r.Participants, "stock") {
 		t.Fatalf("Ada's run = %+v", r)
