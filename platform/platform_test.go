@@ -600,9 +600,15 @@ func delegator(e *env, token string) a2asrv.AgentExecutor { return delegatorTo(e
 
 // delegatorTo hands every task to the agent at target and returns its answer.
 func delegatorTo(e *env, token, target string) a2asrv.AgentExecutor {
+	return forwarder(e, token, target, false)
+}
+
+// forwarder hands every task to target. With eager, it calls target before it sends any
+// event of its own, so the platform hasn't seen its task yet when the call arrives.
+func forwarder(e *env, token, target string, eager bool) a2asrv.AgentExecutor {
 	return a2asrv.AgentExecutorFunc(func(ctx context.Context, ec *a2asrv.ExecutorContext) iter.Seq2[a2a.Event, error] {
 		return func(yield func(a2a.Event, error) bool) {
-			if !yield(a2a.NewSubmittedTask(ec, ec.Message), nil) {
+			if !eager && !yield(a2a.NewSubmittedTask(ec, ec.Message), nil) {
 				return
 			}
 			parent, _ := ec.ServiceParams.Get(relay.HeaderTask)
@@ -623,6 +629,9 @@ func delegatorTo(e *env, token, target string) a2asrv.AgentExecutor {
 				return
 			}
 			child := res.(*a2a.Task)
+			if eager && !yield(a2a.NewSubmittedTask(ec, ec.Message), nil) {
+				return
+			}
 			if !yield(a2a.NewArtifactEvent(ec, a2a.NewTextPart(artifactTextOf(child))), nil) {
 				return
 			}
@@ -679,6 +688,26 @@ func TestDelegationTree(t *testing.T) {
 	forged := asTask(t)(mc.SendMessage(ctx, text("me too")))
 	if link, _ := e.p.Links.Get(ctx, forged.ID); link == nil || link.ParentTaskID != "" {
 		t.Fatalf("forged link = %+v", link)
+	}
+}
+
+// An agent that delegates before sending any event of its own still nests the call under
+// its task: the platform links the task before the agent sees it.
+func TestEagerDelegation(t *testing.T) {
+	e := newEnv(t, "")
+	ctx := t.Context()
+	echoToken := e.agent(t, "echo")
+	buyerToken := e.agent(t, "buyer")
+	e.connect(t, "echo", echoToken, agentServer("echo", echo("echo", 0, nil, nil, nil)), 1)
+	e.connect(t, "buyer", buyerToken, agentServer("buyer", forwarder(e, buyerToken, "echo", true)), 1)
+
+	task := asTask(t)(e.client(t, "buyer", "", "").SendMessage(ctx, text("quote 200 hoodies")))
+	if task.Status.State != a2a.TaskStateCompleted {
+		t.Fatalf("task = %s", task.Status.State)
+	}
+	children, err := e.p.Links.Children(ctx, task.ID)
+	if err != nil || len(children) != 1 || children[0].Recipient != "echo" {
+		t.Fatalf("children = %+v, %v", children, err)
 	}
 }
 

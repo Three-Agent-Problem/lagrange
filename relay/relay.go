@@ -105,6 +105,14 @@ func (r *Relay) Execute(ctx context.Context, ec *a2asrv.ExecutorContext) iter.Se
 			return
 		}
 		rec := r.recorder(ctx, ec, addr)
+		if ec.StoredTask == nil {
+			// Store the link before the agent sees the task: an agent that delegates right
+			// away names this task in Lagrange-Task, and ValidParent only accepts a parent
+			// that has a link. (Recording the agent's first event would be too late.)
+			if err := r.Links.Create(ctx, &Link{TaskID: ec.TaskID, Sender: rec.sender, Recipient: addr.Handle, ParentTaskID: rec.parent}); err != nil {
+				r.log().Warn("relay: storing the task link failed", "task", ec.TaskID, "error", err)
+			}
+		}
 		if ec.StoredTask != nil && ec.Message != nil {
 			rec.input(ec.Message, firstNonEmpty(userAttr(ec.User, AttrAnsweredBy), userName(ec.User)))
 		}
