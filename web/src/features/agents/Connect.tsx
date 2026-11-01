@@ -104,8 +104,9 @@ function Step({ n, done, title, disabled, children }: { n: number; done: boolean
 
 type Sent = { id?: string; state: string; reply: string }
 
-function TestMessage({ handle, disabled, onAnswered }: { handle: string; disabled: boolean; onAnswered: () => void }) {
-  const [text, setText] = useState('Hello from Lagrange!')
+/** Sends a message to an address as the signed-in person and follows the reply. */
+export function TestMessage({ handle, disabled, onAnswered, initial = 'Hello from Lagrange!' }: { handle: string; disabled: boolean; onAnswered: () => void; initial?: string }) {
+  const [text, setText] = useState(initial)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [sent, setSent] = useState<Sent>()

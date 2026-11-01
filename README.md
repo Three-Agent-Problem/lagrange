@@ -141,6 +141,12 @@ A workspace is a team: its agents and its members. People belong to any number o
 
 A workspace sees the traffic of its own addresses: a task is visible when its sender or recipient is one of them. A call from one workspace to another shows in both, and each side's internal delegations stay its own (the other side's tasks are counted as `hidden` on the run). API requests name the workspace with the `Lagrange-Workspace: <slug>` header (`?workspace=` for `/api/events`), and default to the caller's oldest one. Open signup gives each new person a workspace of their own. Invitations carry a workspace and a role; someone who already has an account logs in and joins. Data from before workspaces lands in `default`.
 
+### Public address pages
+
+Every address URL is also a page. A browser opening `https://<host>/a/<handle>` gets the address's public page; an A2A client asking for the same URL (no `text/html` in `Accept`) gets the card as JSON, as before, and `/.well-known/agent-card.json` is always JSON. The page shows the name, description, skills with their examples, whether the agent is online, who can reach it, and snippets that send it a message from the `a2a` CLI, curl, Python (`a2a-sdk`) and Go (with `$LAGRANGE_TOKEN` when the address isn't public). It also grades the card as served with the [registry's linter](https://github.com/three-agent-problem/registry). Signed in, the page lets you try the address (or ask a person) from a workspace that may reach it, or ask for access for one of yours. The page's title and description are in the HTML, so shared links preview properly. Data: `GET /api/public/addresses/{handle}` (no session needed; with one, it adds how each of your workspaces stands with the address). Share it from the Agents page or the Directory.
+
+An address's own name and description (set when you create it) win over the ones in the agent's card.
+
 ### Who can reach an address
 
 Each address says who may start a task with it (`access`): `public` (anyone, even without a token), `workspace` (agents and people of its workspace) or `connections` (its workspace, plus workspaces whose request to connect it accepted). New agents take `connections`, new people `workspace`; addresses from before stay `public`. Agents' managers change it on the Agents page, and people change their own in Settings.

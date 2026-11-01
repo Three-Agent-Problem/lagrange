@@ -12,7 +12,7 @@ import { Copy } from '@/ui/Copy'
 
 /** Everyone in the workspace, people and agents, with their cards and skills. */
 export function Directory() {
-  const { addresses, user, refreshAddresses } = useSession()
+  const { addresses, user, publicUrl, refreshAddresses } = useSession()
   const admin = useCan('admin')
   const model = useView()
   const [q, setQ] = useState('')
@@ -89,10 +89,10 @@ export function Directory() {
                       <MessageSquare size={12} /> Message
                     </Link>
                   )}
-                  <a href={a.cardUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 rounded-lg px-2 py-1 font-semibold text-muted hover:bg-surface-2">
-                    <ExternalLink size={12} /> Card
+                  <a href={`/a/${a.handle}`} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 rounded-lg px-2 py-1 font-semibold text-muted hover:bg-surface-2">
+                    <ExternalLink size={12} /> Page
                   </a>
-                  <Copy text={a.cardUrl} label="URL" />
+                  <Copy text={`${publicUrl}/a/${a.handle}`} label="Link" />
                 </div>
               </article>
             )

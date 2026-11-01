@@ -104,6 +104,22 @@ export type Connection = {
   decidedAt?: string
 }
 
+/** An address's public page: its card, how to reach it, and the visitor's standing. */
+export type Profile = {
+  handle: string
+  kind: 'agent' | 'human'
+  name: string
+  description: string
+  url: string
+  cardUrl: string
+  card: AgentCard
+  access: Access
+  online: boolean
+  workspace?: string
+  check: { grade: 'conformant' | 'near-conformant' | 'non-conformant'; findings: { severity: 'error' | 'warning'; path: string; message: string }[] | null }
+  viewer?: { handle: string; workspaces: { slug: string; name: string; role: Role; status: string }[] }
+}
+
 export type Token = { handle: string; label: string; prefix: string; createdAt: string; lastUsed?: string }
 
 export type TaskView = {
@@ -296,6 +312,7 @@ export const api = {
   members: () => call<{ members: Member[]; workspace: Workspace }>('GET', '/api/workspace/members'),
   setRole: (userId: number, role: Role) => call<void>('PUT', `/api/workspace/members/${userId}`, { role }),
   removeMember: (userId: number) => call<void>('DELETE', `/api/workspace/members/${userId}`, {}),
+  profile: (handle: string) => call<Profile>('GET', `/api/public/addresses/${encodeURIComponent(handle)}`),
   setAccess: (handle: string, access: Access) => call<void>('PUT', `/api/addresses/${encodeURIComponent(handle)}/access`, { access }),
   connections: () => call<{ incoming: Connection[]; outgoing: Connection[] }>('GET', '/api/connections'),
   requestConnection: (to: string, note: string) => call<{ connection: Connection }>('POST', '/api/connections', { to, note }),

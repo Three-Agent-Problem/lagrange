@@ -19,6 +19,8 @@ import (
 	"github.com/a2aproject/a2a-go/v2/a2aext/structuredinput"
 	"github.com/a2aproject/a2a-go/v2/a2asrv"
 
+	"github.com/three-agent-problem/registry/lint"
+
 	"github.com/three-agent-problem/lagrange/activity"
 	"github.com/three-agent-problem/lagrange/credentials"
 	"github.com/three-agent-problem/lagrange/directory"
@@ -34,6 +36,7 @@ func (p *Platform) api(mux *http.ServeMux) {
 	p.accountRoutes(mux)
 	p.workspaceRoutes(mux)
 	p.accessRoutes(mux)
+	p.profileRoutes(mux)
 	mux.Handle("GET /api/users", p.in(directory.RoleViewer, p.handleUsers))
 	mux.Handle("POST /api/users", p.in(directory.RoleAdmin, p.handleCreateUser))
 	mux.Handle("GET /api/addresses", p.in(directory.RoleViewer, p.handleAddresses))
@@ -848,7 +851,9 @@ func (p *Platform) handleActivity(w http.ResponseWriter, r *http.Request, me *di
 
 // handleRegistrySearch answers like the registry's GET /agents, so agents built on the
 // registry client find each other on Lagrange. ?skill matches a skill ID or tag, ?q the
-// name, description and skills; offline agents are left out unless ?all=1.
+// name, description and skills; offline agents are left out unless ?all=1, and addresses
+// that take tasks from their workspace only are never listed. Each card is graded by the
+// registry's linter, as served here.
 func (p *Platform) handleRegistrySearch(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	skill, text, all := strings.ToLower(q.Get("skill")), strings.ToLower(q.Get("q")), q.Get("all") == "1"
@@ -857,15 +862,11 @@ func (p *Platform) handleRegistrySearch(w http.ResponseWriter, r *http.Request) 
 		apiError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	type report struct {
-		Grade    string `json:"grade"`
-		Findings []any  `json:"findings"`
-	}
 	type entry struct {
 		URL        string         `json:"url"`
 		CardURL    string         `json:"cardUrl"`
 		Card       *a2a.AgentCard `json:"card"`
-		Report     report         `json:"report"`
+		Report     lint.Report    `json:"report"`
 		Registered time.Time      `json:"registered"`
 		LastSeen   time.Time      `json:"lastSeen"`
 		Up         bool           `json:"up"`
@@ -873,7 +874,7 @@ func (p *Platform) handleRegistrySearch(w http.ResponseWriter, r *http.Request) 
 	agents := []entry{}
 	now := time.Now()
 	for _, v := range views {
-		if !v.Online && !all {
+		if !v.Online && !all || v.Access == directory.AccessWorkspace {
 			continue
 		}
 		if skill != "" && !hasSkill(v.Card, skill) {
@@ -882,9 +883,10 @@ func (p *Platform) handleRegistrySearch(w http.ResponseWriter, r *http.Request) 
 		if text != "" && !strings.Contains(strings.ToLower(v.Card.Name+" "+v.Card.Description+" "+skillText(v.Card)), text) {
 			continue
 		}
+		raw, _ := json.Marshal(v.Card)
 		agents = append(agents, entry{
 			URL: p.cfg.PublicURL + "/a/" + v.Handle, CardURL: v.CardURL, Card: v.Card,
-			Report: report{Grade: "conformant", Findings: []any{}}, Registered: v.CreatedAt, LastSeen: now, Up: v.Online,
+			Report: lint.Check(raw), Registered: v.CreatedAt, LastSeen: now, Up: v.Online,
 		})
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"agents": agents})

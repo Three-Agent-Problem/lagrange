@@ -9,6 +9,7 @@ import { authLinkOf } from '@/features/auth/handle'
 import { Decision } from '@/features/decision/Decision'
 import { Directory } from '@/features/directory/Directory'
 import { LiveGraph } from '@/features/graph/LiveGraph'
+import { ProfilePage } from '@/features/profile/Profile'
 import { Between } from '@/features/inbox/Between'
 import { Inbox } from '@/features/inbox/Inbox'
 import { Runs } from '@/features/runs/Runs'
@@ -21,6 +22,8 @@ import { useSession } from '@/store/session'
 const decisionToken = /^\/d\/([^/]+)\/?$/.exec(location.pathname)?.[1]
 /** Emailed links (/auth/<purpose>/<token>): confirm email, log in, reset password, accept an invitation. */
 const authLink = authLinkOf(location.pathname)
+/** An address's public page (/a/<handle>) works signed out too. */
+const profileHandle = /^\/a\/([^/]+)\/?$/.exec(location.pathname)?.[1]
 
 // Pages outside the shell (login, decision links) follow the theme too.
 document.documentElement.dataset.theme = savedTheme()
@@ -28,6 +31,7 @@ document.documentElement.dataset.theme = savedTheme()
 export function App() {
   if (decisionToken) return <Decision token={decisionToken} />
   if (authLink) return <AuthLink {...authLink} />
+  if (profileHandle) return <ProfilePage handle={decodeURIComponent(profileHandle)} />
   return <LoggedIn />
 }
 

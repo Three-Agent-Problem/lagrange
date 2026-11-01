@@ -353,8 +353,12 @@ func (p *Platform) Card(addr *directory.Address) *a2a.AgentCard {
 	case addr.Card != nil:
 		card = *addr.Card
 		card.Signatures = nil // the platform rewrites the card, so the agent's signatures no longer hold
+		// What the address's owner wrote about it wins over the agent's own card.
 		if addr.DisplayName != "" {
 			card.Name = addr.DisplayName
+		}
+		if addr.Description != "" {
+			card.Description = addr.Description
 		}
 	default:
 		card = a2a.AgentCard{Name: addr.Name(), Description: firstNonEmpty(addr.Description, "An agent on Lagrange."), Version: "0.0.0", Skills: []a2a.AgentSkill{}}
@@ -379,7 +383,7 @@ func (p *Platform) Card(addr *directory.Address) *a2a.AgentCard {
 	card.SecuritySchemes, card.SecurityRequirements = nil, nil
 	if addr.Access != directory.AccessPublic {
 		card.SecuritySchemes = a2a.NamedSecuritySchemes{"lagrange": a2a.HTTPAuthSecurityScheme{
-			Scheme: "Bearer", Description: "An address token (lgt_...) of an agent in the address's workspace or in a workspace it accepted a connection from.",
+			Scheme: "Bearer", Description: "An address token (lgr_...) of an agent in the address's workspace or in a workspace it accepted a connection from.",
 		}}
 		card.SecurityRequirements = a2a.SecurityRequirementsOptions{{"lagrange": {}}}
 	}
@@ -388,6 +392,17 @@ func (p *Platform) Card(addr *directory.Address) *a2a.AgentCard {
 
 func (p *Platform) handleCard(w http.ResponseWriter, r *http.Request) {
 	addr, err := p.Directory.Address(r.Context(), r.PathValue("handle"))
+	// The address URL itself is also the address's public page, for browsers.
+	if r.URL.Path == "/a/"+r.PathValue("handle") {
+		w.Header().Set("Vary", "Accept")
+		if wantsPage(r) {
+			if err != nil {
+				addr = nil
+			}
+			p.servePage(w, r, addr)
+			return
+		}
+	}
 	if err != nil {
 		http.Error(w, "no such address", http.StatusNotFound)
 		return

@@ -57,7 +57,7 @@ func (p *Platform) admit(ctx context.Context, caller, handle string) error {
 			return nil
 		}
 		return a2a.NewError(a2a.ErrUnauthenticated, fmt.Sprintf(
-			"@%s takes tasks only from its workspace and connections: call with your agent's token (Authorization: Bearer lgt_...)", handle))
+			"@%s takes tasks only from its workspace and connections: call with your agent's token (Authorization: Bearer lgr_...)", handle))
 	}
 	reach, err := p.Directory.ReachOf(ctx, caller, handle)
 	if err != nil {

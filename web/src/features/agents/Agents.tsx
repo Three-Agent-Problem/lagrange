@@ -1,4 +1,4 @@
-import { KeyRound, Plus, Trash2 } from 'lucide-react'
+import { ExternalLink, KeyRound, Plus, Trash2 } from 'lucide-react'
 import { useEffect, useState, type FormEvent } from 'react'
 import { useSearchParams } from 'react-router'
 import { AccessPicker } from '@/features/access/Access'
@@ -171,6 +171,9 @@ function AgentCard({ a, live, publicUrl, onSecret, onChanged }: { a: Address; li
           <p className="mt-1 text-sm text-muted">{a.card.description}</p>
         </div>
         <div className="flex gap-1">
+          <a className="rounded-lg p-2 text-muted hover:bg-surface-2 hover:text-ink" title="Its public page: share this link" href={`/a/${a.handle}`} target="_blank" rel="noreferrer">
+            <ExternalLink size={15} />
+          </a>
           <button
             className="rounded-lg p-2 text-muted hover:bg-surface-2 hover:text-ink"
             title="New token"
