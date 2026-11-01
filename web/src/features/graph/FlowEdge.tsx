@@ -38,7 +38,7 @@ export function FlowEdge(props: EdgeProps<FlowEdgeT>) {
   const flash = sinceFinish >= 0 && sinceFinish < FLASH_MS && flow.active === 0
   const flashColor = flow.finishedState === 'completed' ? 'var(--good)' : 'var(--bad)'
   const live = active > 0 || waiting || flow.queued > 0
-  const color = waiting ? 'var(--warn)' : active > 0 ? 'var(--accent)' : flow.queued ? 'var(--muted)' : 'var(--muted)'
+  const color = waiting ? 'var(--warn)' : active > 0 ? 'var(--work)' : flow.queued ? 'var(--muted)' : 'var(--muted)'
 
   return (
     <>
@@ -55,10 +55,10 @@ export function FlowEdge(props: EdgeProps<FlowEdgeT>) {
         }}
         interactionWidth={20}
       />
-      {comet && <path key={`c${flow.startedAt}`} d={path} fill="none" stroke="var(--accent)" strokeWidth={4} strokeLinecap="round" className="edge-comet" pathLength={1000} />}
+      {comet && <path key={`c${flow.startedAt}`} d={path} fill="none" stroke="var(--work)" strokeWidth={4} strokeLinecap="round" className="edge-comet" pathLength={1000} />}
       {flash && <path key={`f${flow.finishedAt}`} d={path} fill="none" stroke={flashColor} className="edge-flash" pointerEvents="none" />}
       {Array.from({ length: dots }, (_, i) => (
-        <circle key={i} r={4} fill="var(--accent)" stroke="var(--surface)" strokeWidth={1.5}>
+        <circle key={i} r={4} fill="var(--work)" stroke="var(--surface)" strokeWidth={1.5}>
           <animateMotion dur={`${dur}s`} repeatCount="indefinite" path={path} begin={`${(i * dur) / dots}s`} />
         </circle>
       ))}
@@ -73,7 +73,7 @@ export function FlowEdge(props: EdgeProps<FlowEdgeT>) {
           {(live || selected) && flow.label && (
             <span className="max-w-[160px] truncate rounded-full bg-surface px-2 py-0.5 text-[10px] font-semibold text-muted shadow-card ring-1 ring-line">
               {flow.label}
-              {flow.active > 1 && <b className="ml-1 font-mono text-accent">×{flow.active}</b>}
+              {flow.active > 1 && <b className="ml-1 font-mono text-work">×{flow.active}</b>}
             </span>
           )}
           {flow.queued > 0 && (

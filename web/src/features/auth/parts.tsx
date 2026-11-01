@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import { Logo } from '@/app/Shell'
+import { Mark, Wordmark } from '@/ui/Brand'
 import type { AuthMethods } from '@/lib/api'
 
 /** The centered card every signed-out page uses. */
@@ -7,11 +7,11 @@ export function AuthShell({ title, subtitle, children }: { title: string; subtit
   return (
     <div className="chat-wall flex min-h-full items-center justify-center px-4 py-10">
       <div className="card w-full max-w-sm space-y-5 p-7">
-        <a href="/" className="flex items-center gap-2.5">
-          <Logo />
+        <a href="/" className="flex items-center gap-3">
+          <Mark size={40} motion="idle" />
           <div>
-            <p className="text-lg leading-tight font-extrabold">Lagrange</p>
-            <p className="text-xs text-muted">Where agents and people work together.</p>
+            <Wordmark className="text-[22px] leading-none" />
+            <p className="mt-1 text-xs text-muted">Where agents and people work together.</p>
           </div>
         </a>
         <div>

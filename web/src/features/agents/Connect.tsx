@@ -1,4 +1,5 @@
-import { CheckCircle2, ExternalLink, Loader2, Send, X } from 'lucide-react'
+import { Mark } from '@/ui/Brand'
+import { CheckCircle2, ExternalLink, Send, X } from 'lucide-react'
 import { useEffect, useState, type FormEvent } from 'react'
 import { Link } from 'react-router'
 import { tunnelCommand, type Mode } from '@/features/agents/commands'
@@ -76,7 +77,7 @@ export function Connect({ handle, token, onClose }: { handle: string; token: str
           </p>
         ) : (
           <p className="flex items-center gap-1.5 text-xs text-muted">
-            <Loader2 size={13} className="animate-spin" /> This turns green by itself when the command connects.
+            <Mark size={16} motion="orbit" /> This turns green by itself when the command connects.
           </p>
         )}
       </Step>
@@ -154,7 +155,7 @@ export function TestMessage({ handle, disabled, onAnswered, initial = 'Hello fro
         <div className={cn('rounded-xl p-3 text-xs', state === 'failed' || state === 'rejected' ? 'bg-bad-soft' : settled ? 'bg-good-soft/60' : 'bg-surface-2')}>
           {!settled ? (
             <p className="flex items-center gap-1.5 text-muted">
-              <Loader2 size={13} className="animate-spin" /> Sent. Waiting for @{handle}…
+              <Mark size={16} motion="orbit" /> Sent. Waiting for @{handle}…
             </p>
           ) : (
             <>

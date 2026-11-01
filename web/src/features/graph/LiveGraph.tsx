@@ -120,7 +120,7 @@ export function LiveGraph() {
     const a = positions[f.source]
     const b = positions[f.target]
     const back = !!a && !!b && b.x <= a.x
-    const color = f.waiting ? 'var(--warn)' : f.active ? 'var(--accent)' : 'var(--muted)'
+    const color = f.waiting ? 'var(--warn)' : f.active ? 'var(--work)' : 'var(--muted)'
     return {
       id: f.id,
       source: f.source,
@@ -160,7 +160,7 @@ export function LiveGraph() {
           <Background variant={BackgroundVariant.Dots} gap={18} size={1.4} color="var(--grid)" />
           <AutoFit shape={handles.join(',')} />
           <Controls showInteractive={false} position="bottom-left" />
-          <MiniMap pannable zoomable position="bottom-right" nodeColor={(n) => (n.id === OUTSIDE ? 'var(--line)' : 'var(--accent-soft)')} nodeStrokeColor="var(--accent)" />
+          <MiniMap pannable zoomable position="bottom-right" nodeColor={(n) => (n.id === OUTSIDE ? 'var(--line)' : 'var(--work-soft)')} nodeStrokeColor="var(--work)" />
         </ReactFlow>
 
         <div className="pointer-events-none absolute top-4 left-4 flex flex-wrap items-center gap-2">
@@ -173,7 +173,7 @@ export function LiveGraph() {
             {replay ? <Rewind size={12} /> : <Radio size={12} className={status === 'live' ? 'animate-pulse' : ''} />}
             {replay ? 'Replay' : status === 'live' ? 'Live' : 'Connecting…'}
           </span>
-          <Stat icon={<Sparkles size={12} />} label="in flight" value={inFlight} tone="accent" />
+          <Stat icon={<Sparkles size={12} />} label="in flight" value={inFlight} tone="work" />
           <Stat icon={<MessageCircleQuestion size={12} />} label="waiting on someone" value={waitingPeople} tone="warn" />
           <Stat icon={<Bot size={12} />} label={`of ${agents} agents online`} value={online} tone="good" />
         </div>
@@ -197,8 +197,8 @@ export function LiveGraph() {
   )
 }
 
-function Stat({ icon, label, value, tone }: { icon: React.ReactNode; label: string; value: number; tone: 'accent' | 'warn' | 'good' }) {
-  const color = { accent: 'text-accent', warn: 'text-warn', good: 'text-good' }[tone]
+function Stat({ icon, label, value, tone }: { icon: React.ReactNode; label: string; value: number; tone: 'work' | 'warn' | 'good' }) {
+  const color = { work: 'text-work', warn: 'text-warn', good: 'text-good' }[tone]
   return (
     <span className="pointer-events-auto flex items-center gap-1.5 rounded-full bg-surface px-2.5 py-1 text-xs font-semibold text-muted shadow-card ring-1 ring-line">
       <span className={color}>{icon}</span>

@@ -57,7 +57,7 @@ const TONE: Record<Outcome, string> = {
   done: 'bg-good',
   failed: 'bg-bad',
   waiting: 'bg-warn',
-  running: 'bg-accent animate-pulse',
+  running: 'bg-work animate-pulse',
 }
 
 /** One card per run, newest first, each saying how it ended; a digest of the last hour on top. */

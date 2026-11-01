@@ -8,14 +8,8 @@ import { waitingFor } from '@/store/model'
 import { WorkspaceSwitcher } from '@/features/workspaces/Workspaces'
 import { useSession } from '@/store/session'
 import { Avatar } from '@/ui/Avatar'
+import { HoverMark } from '@/ui/Brand'
 
-export function Logo({ size = 34 }: { size?: number }) {
-  return (
-    <span className="flex shrink-0 items-center justify-center rounded-xl bg-accent font-extrabold text-accent-ink shadow-card" style={{ width: size, height: size, fontSize: size * 0.42 }}>
-      3A
-    </span>
-  )
-}
 
 /** The theme the person picked, or else the system's. */
 export function savedTheme(): 'light' | 'dark' {
@@ -64,7 +58,9 @@ export function Shell() {
   return (
     <div className="flex h-full">
       <nav className="flex w-[76px] shrink-0 flex-col items-center gap-1.5 border-r border-line bg-surface py-3">
-        <Logo />
+        <span title={waiting ? `${waiting} waiting on you` : 'Lagrange'} className="py-1">
+          <HoverMark size={34} hot={waiting > 0} />
+        </span>
         <div className="mt-2.5">
           <WorkspaceSwitcher />
         </div>

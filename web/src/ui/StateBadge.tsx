@@ -15,7 +15,7 @@ export const STATE_LABEL: Record<State, string> = {
 
 export const STATE_TONE: Record<State, string> = {
   submitted: 'bg-surface-2 text-muted',
-  working: 'bg-accent-soft text-accent',
+  working: 'bg-work-soft text-work',
   input_required: 'bg-warn-soft text-warn',
   auth_required: 'bg-auth-soft text-auth',
   completed: 'bg-good-soft text-good',
@@ -28,7 +28,7 @@ export const STATE_TONE: Record<State, string> = {
 /** The CSS color of a state, for strokes and rings. */
 export const STATE_COLOR: Record<State, string> = {
   submitted: 'var(--muted)',
-  working: 'var(--accent)',
+  working: 'var(--work)',
   input_required: 'var(--warn)',
   auth_required: 'var(--auth)',
   completed: 'var(--good)',

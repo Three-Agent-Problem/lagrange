@@ -2,7 +2,7 @@ import { cn } from '@/lib/cn'
 import type { Split } from '@/features/runs/timing'
 import { duration } from '@/ui/time'
 
-const COLOR = { working: 'bg-accent', waiting: 'bg-warn', queued: 'bg-muted/50' }
+const COLOR = { working: 'bg-work', waiting: 'bg-warn', queued: 'bg-muted/50' }
 
 /** Where the run's time went: a timeline bar and the totals. */
 export function TimeBar({ split, name }: { split: Split; name: (h: string) => string }) {

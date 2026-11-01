@@ -11,10 +11,10 @@ const PAD = 28
 
 /** The colour of a step, by what kind of thing happened. */
 export const KIND_COLOR: Record<StepKind, string> = {
-  ask: 'var(--accent)',
-  message: 'var(--accent)',
+  ask: 'var(--work)',
+  message: 'var(--work)',
   progress: 'var(--muted)',
-  artifact: 'var(--accent)',
+  artifact: 'var(--work)',
   wait: 'var(--warn)',
   answer: 'var(--good)',
   queued: 'var(--warn)',

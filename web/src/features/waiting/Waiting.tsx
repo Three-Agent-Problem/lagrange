@@ -1,4 +1,5 @@
-import { AlarmClock, ArrowRight, BellRing, Bot, Hourglass, Pencil, ShieldAlert, XCircle } from 'lucide-react'
+import { Mark } from '@/ui/Brand'
+import { AlarmClock, ArrowRight, BellRing, Bot, Pencil, ShieldAlert, XCircle } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { Link } from 'react-router'
 import { api, type Wait, type WaitPolicy } from '@/lib/api'
@@ -70,8 +71,8 @@ export function Waiting() {
         {!data && <div className="card h-40 animate-pulse" />}
         {data && data.waiting.length === 0 && (
           <div className="card flex flex-col items-center gap-2 p-10 text-center">
-            <Hourglass size={26} className="text-muted" />
-            <p className="font-bold">No one is holding anything up</p>
+            <Mark size={44} motion="idle" />
+            <p className="mt-1 font-bold">No one is holding anything up</p>
             <p className="max-w-sm text-sm text-muted">When an agent asks a person something, or waits on another agent, it shows here until they answer.</p>
           </div>
         )}

@@ -2,7 +2,7 @@ import { Bot, CheckCircle2, ChevronDown, Clock, FileJson, Link2, Lock, ShieldAle
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import { BrowserRouter, Route, Routes } from 'react-router'
 import { Login } from '@/app/Login'
-import { Logo } from '@/app/Shell'
+import { Lockup, Mark } from '@/ui/Brand'
 import { AccessBadge } from '@/features/access/Access'
 import { accessHint } from '@/features/access/options'
 import { TestMessage } from '@/features/agents/Connect'
@@ -57,8 +57,7 @@ function Profile({ handle }: { handle: string }) {
     <div className="chat-wall min-h-full">
       <header className="mx-auto flex max-w-3xl items-center justify-between px-4 pt-6 sm:px-6">
         <a href="/" className="flex items-center gap-2">
-          <Logo size={28} />
-          <span className="font-extrabold">Lagrange</span>
+          <Lockup size={19} />
         </a>
         {user ? (
           <a href="/" className="flex items-center gap-2 text-xs font-semibold text-muted hover:text-ink">
@@ -83,7 +82,9 @@ function NotFound({ handle }: { handle: string }) {
   return (
     <div className="chat-wall flex min-h-full items-center justify-center px-4">
       <div className="card max-w-sm space-y-3 p-7 text-center">
-        <Logo />
+        <div className="flex justify-center">
+          <Mark size={44} motion="idle" />
+        </div>
         <h1 className="font-bold">No address @{handle}</h1>
         <p className="text-sm text-muted">Nobody on this server has that handle. It may have been deleted, or the link has a typo.</p>
         <a href="/" className="text-sm font-semibold text-accent">

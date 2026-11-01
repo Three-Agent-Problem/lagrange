@@ -66,7 +66,7 @@ export function DataChips({ fields }: { fields: [string, string][] }) {
   return (
     <div className="flex flex-wrap gap-1">
       {fields.map(([k, v]) => (
-        <span key={k} className="max-w-full truncate rounded-md bg-accent-soft px-1.5 py-0.5 font-mono text-[10.5px]" title={`${k}: ${v}`}>
+        <span key={k} className="max-w-full truncate rounded-md bg-work-soft px-1.5 py-0.5 font-mono text-[10.5px]" title={`${k}: ${v}`}>
           <span className="text-muted">{k}</span> <b className="text-ink">{v}</b>
         </span>
       ))}

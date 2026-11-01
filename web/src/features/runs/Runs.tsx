@@ -1,4 +1,5 @@
-import { ArchiveRestore, ArrowRight, ChevronLeft, ChevronRight, Eye, EyeOff, ListTree, Network, Pause, Play, Search, Webhook } from 'lucide-react'
+import { Mark, Orbiting } from '@/ui/Brand'
+import { ArchiveRestore, ArrowRight, ChevronLeft, ChevronRight, Eye, EyeOff, Network, Pause, Play, Search, Webhook } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router'
 import { api, type Exchange, type Run, type RunDetail, type RunStatus } from '@/lib/api'
@@ -166,7 +167,9 @@ function Empty() {
   return (
     <div className="flex flex-1 items-center justify-center p-8 text-center text-sm text-muted">
       <div>
-        <ListTree className="mx-auto mb-2 text-accent" />
+        <div className="mb-3 flex justify-center">
+          <Mark size={44} motion="idle" />
+        </div>
         Nothing has run yet. Message an agent from the Inbox and its run shows up here, step by step.
         <div className="mt-3 flex justify-center gap-4 font-semibold">
           <Link to="/inbox" className="text-accent">
@@ -278,7 +281,7 @@ function RunView({ id, kind, name, onArchived }: { id: string; kind: (h: string)
   }, [go])
 
   if (error) return <p className="p-8 text-sm text-bad">{error}</p>
-  if (!data || !s) return <p className="p-8 text-sm text-muted">Loading the run…</p>
+  if (!data || !s) return <Orbiting label="Loading the run…" className="p-16" />
   const run = data.run
   const start = steps[0]?.at ?? Date.parse(run.startedAt)
   const end = Math.max(...steps.map((x) => x.at), Date.parse(run.updatedAt))
@@ -540,7 +543,7 @@ function Raw({ step }: { step: Step }) {
   )
 }
 
-const DIR_TONE: Record<Exchange['direction'], string> = { in: 'bg-accent-soft text-accent', out: 'bg-good-soft text-good', push: 'bg-auth-soft text-auth' }
+const DIR_TONE: Record<Exchange['direction'], string> = { in: 'bg-work-soft text-work', out: 'bg-good-soft text-good', push: 'bg-auth-soft text-auth' }
 const DIR_LABEL: Record<Exchange['direction'], string> = { in: 'call in', out: 'to agent', push: 'webhook' }
 
 function ExchangeView({ x, defaultOpen = false }: { x: Exchange; defaultOpen?: boolean }) {

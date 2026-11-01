@@ -3,60 +3,66 @@
 
 @custom-variant dark (&:where([data-theme='dark'], [data-theme='dark'] *));
 
-/* The neet-syst palette; "wait" (violet) marks tasks parked on a person or on auth. */
+/* Lagrange brand: Fog ground, ink text, one crimson accent (#E23248) for actions, selection
+   and the mark. Activity (working, asks, data) is a quiet steel blue, --work, so the screen
+   doesn't read as a wall of errors; waiting stays amber, failure brick. */
 :root {
-  --bg: #f7f5f0;
-  --surface: #ffffff;
-  --surface-2: #f1eee7;
-  --ink: #1d1b18;
-  --muted: #6f6a61;
-  --line: #e4dfd5;
-  --accent: #5b4fe0;
-  --accent-soft: #ebe8ff;
+  --bg: #eceef1;
+  --surface: #f8f9fa;
+  --surface-2: #e1e4e9;
+  --ink: #121418;
+  --muted: #5b616c;
+  --line: #d3d7de;
+  --accent: #e23248;
+  --accent-soft: #fadee2;
   --accent-ink: #ffffff;
-  --good: #1f9d63;
-  --good-soft: #e1f5ea;
-  --warn: #d48806;
-  --warn-soft: #fdf1d9;
-  --bad: #d64545;
-  --bad-soft: #fde6e4;
-  --auth: #9b51e0;
-  --auth-soft: #f3e8fd;
-  --canvas: #fbfaf7;
-  --grid: #e8e3d9;
-  --bubble-me: #e3f4dc;
-  --shadow: 0 1px 2px rgb(29 27 24 / 0.06), 0 4px 16px rgb(29 27 24 / 0.06);
+  --work: #3d5a80;
+  --work-soft: #dde4ee;
+  --good: #1f7a4a;
+  --good-soft: #dbeee3;
+  --warn: #c2650f;
+  --warn-soft: #f8e6d2;
+  --bad: #a3201b;
+  --bad-soft: #f5dcda;
+  --auth: #8f47ae;
+  --auth-soft: #efe2f5;
+  --canvas: #f3f5f7;
+  --grid: #d9dde3;
+  --bubble-me: #dce3ec;
+  --shadow: 0 1px 2px rgb(18 20 24 / 0.06), 0 4px 16px rgb(18 20 24 / 0.06);
   color-scheme: light;
 }
 
 [data-theme='dark'] {
-  --bg: #15141a;
-  --surface: #1e1d25;
-  --surface-2: #26252f;
-  --ink: #f2f0ea;
-  --muted: #a39f97;
-  --line: #34323d;
-  --accent: #8b80ff;
-  --accent-soft: #2c2a4a;
-  --accent-ink: #120f2a;
-  --good: #3ccf8e;
-  --good-soft: #17352a;
-  --warn: #f0b13d;
-  --warn-soft: #3b2f15;
-  --bad: #ff6b6b;
+  --bg: #0e1115;
+  --surface: #151920;
+  --surface-2: #1c2129;
+  --ink: #e8ebf0;
+  --muted: #8b93a0;
+  --line: #28303a;
+  --accent: #f0455c;
+  --accent-soft: #40191e;
+  --accent-ink: #16080b;
+  --work: #8fa8cc;
+  --work-soft: #1d2634;
+  --good: #5cc48a;
+  --good-soft: #173328;
+  --warn: #f0a050;
+  --warn-soft: #3a2a17;
+  --bad: #ff8a80;
   --bad-soft: #3d1d1f;
-  --auth: #c48bff;
+  --auth: #cd94e6;
   --auth-soft: #33224a;
-  --canvas: #18171e;
-  --grid: #2a2933;
-  --bubble-me: #1f3a2c;
+  --canvas: #11151a;
+  --grid: #232a33;
+  --bubble-me: #1f2833;
   --shadow: 0 1px 2px rgb(0 0 0 / 0.3), 0 6px 20px rgb(0 0 0 / 0.25);
   color-scheme: dark;
 }
 
 @theme inline {
-  --font-sans: 'Plus Jakarta Sans', ui-sans-serif, system-ui, sans-serif;
-  --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+  --font-sans: 'Schibsted Grotesk', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: 'DM Mono', ui-monospace, monospace;
   --color-bg: var(--bg);
   --color-surface: var(--surface);
   --color-surface-2: var(--surface-2);
@@ -66,6 +72,8 @@
   --color-accent: var(--accent);
   --color-accent-soft: var(--accent-soft);
   --color-accent-ink: var(--accent-ink);
+  --color-work: var(--work);
+  --color-work-soft: var(--work-soft);
   --color-good: var(--good);
   --color-good-soft: var(--good-soft);
   --color-warn: var(--warn);
@@ -148,7 +156,7 @@ body {
   inset: -5px;
   border-radius: 1.3rem;
   padding: 2px;
-  background: conic-gradient(from var(--halo-angle), transparent 0 65%, color-mix(in oklab, var(--accent) 45%, transparent) 82%, var(--accent) 96%, transparent 100%);
+  background: conic-gradient(from var(--halo-angle), transparent 0 65%, color-mix(in oklab, var(--work) 45%, transparent) 82%, var(--work) 96%, transparent 100%);
   -webkit-mask:
     linear-gradient(#000 0 0) content-box,
     linear-gradient(#000 0 0);
@@ -203,5 +211,11 @@ body {
   }
   .card {
     @apply rounded-2xl border border-line bg-surface shadow-card;
+  }
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
   }
 }

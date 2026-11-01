@@ -17,6 +17,7 @@ import { Settings } from '@/features/settings/Settings'
 import { Waiting } from '@/features/waiting/Waiting'
 import { NoWorkspace } from '@/features/workspaces/Workspaces'
 import { useSession } from '@/store/session'
+import { Orbiting } from '@/ui/Brand'
 
 /** A decision link (/d/<token>) works without logging in: the token is the credential. */
 const decisionToken = /^\/d\/([^/]+)\/?$/.exec(location.pathname)?.[1]
@@ -40,7 +41,7 @@ function LoggedIn() {
   useEffect(() => {
     void load()
   }, [load])
-  if (!ready) return null
+  if (!ready) return <Orbiting className="h-full animate-[fade-in_0.4s_ease-out_0.25s_both]" size={36} />
   if (!user) return <Login />
   if (!user.verified) return <VerifyEmail />
   if (!workspace) return <NoWorkspace />

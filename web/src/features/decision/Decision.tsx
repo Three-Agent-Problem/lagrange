@@ -1,7 +1,7 @@
 import { CheckCircle2, ExternalLink, Link2Off } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { api, ApiError, type Decision as DecisionView } from '@/lib/api'
-import { Logo } from '@/app/Shell'
+import { Lockup } from '@/ui/Brand'
 import { isWaiting, normState } from '@/store/model'
 import { AnswerForm } from '@/ui/AnswerForm'
 import { Bubble } from '@/ui/Bubble'
@@ -27,8 +27,7 @@ export function Decision({ token }: { token: string }) {
     <div className="chat-wall min-h-full px-4 py-6 sm:py-12">
       <div className="mx-auto flex w-full max-w-lg flex-col gap-4">
         <a href="/" className="flex items-center gap-2 self-start">
-          <Logo size={28} />
-          <span className="text-sm font-extrabold">Lagrange</span>
+          <Lockup size={17} />
         </a>
         {error ? (
           <Notice icon={<Link2Off size={22} className="text-muted" />} title={error.gone ? 'This link no longer works' : 'Something went wrong'} text={error.message} />

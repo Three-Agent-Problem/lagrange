@@ -28,7 +28,7 @@ type Tone = 'idle' | 'working' | 'waiting' | 'auth' | 'failed' | 'offline'
 
 const RING: Record<Tone, string> = {
   idle: 'border-line',
-  working: 'border-accent',
+  working: 'border-work',
   waiting: 'border-warn pulse-ring',
   auth: 'border-auth pulse-ring',
   failed: 'border-bad',
