@@ -292,7 +292,7 @@ And two HTTP headers (gRPC metadata) that agents on the platform send with their
 ## Roadmap
 
 1. Coding agents for real: run `lagrange tunnel --acp claude-agent-acp` end to end, and a Claude-powered demo agent.
-2. Signup, organizations and invites; changing passwords in the app.
+2. Binary releases (Homebrew, a GHCR image) and a Slack app with buttons.
 3. OpenTelemetry with `traceparent` across hops.
 4. Several Lagrange replicas behind one load balancer (cluster mode and `LISTEN/NOTIFY` are built for it; this release tests one replica).
 5. An MCP bridge, so MCP clients can message addresses; pruning of recorded exchanges.
