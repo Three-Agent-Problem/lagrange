@@ -1,0 +1,10 @@
+# The release image. GoReleaser builds the binaries (with the web app embedded) and puts
+# each platform's in the build context; this copies it in. To build from source, use Dockerfile.
+FROM gcr.io/distroless/static-debian12:nonroot
+ARG TARGETPLATFORM
+COPY $TARGETPLATFORM/lagrange /usr/local/bin/lagrange
+ENV LAGRANGE_ADDR=:8080
+EXPOSE 8080
+HEALTHCHECK --interval=15s --timeout=5s --start-period=10s CMD ["lagrange", "healthcheck"]
+ENTRYPOINT ["lagrange"]
+CMD ["serve"]

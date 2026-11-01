@@ -22,3 +22,6 @@ go.work.sum
 /web/dist/*
 !/web/dist/.keep
 /web/.vitest/
+
+# GoReleaser output
+/dist/

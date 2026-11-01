@@ -1,0 +1,73 @@
+# Releases: push a tag (git tag v0.1.0 && git push origin v0.1.0) and the release workflow
+# runs this. It builds the binaries with the web app embedded, publishes the GitHub
+# release, the ghcr.io image and the Homebrew cask. Try it locally without publishing:
+#   goreleaser release --snapshot --clean --skip=docker
+version: 2
+project_name: lagrange
+
+before:
+  hooks:
+    - sh -c "cd web && npm ci --no-audit --no-fund && npm run build"
+
+builds:
+  - id: lagrange
+    main: ./cmd/lagrange
+    binary: lagrange
+    env:
+      - CGO_ENABLED=0
+    goos: [linux, darwin, windows]
+    goarch: [amd64, arm64]
+    flags: [-trimpath]
+    ldflags:
+      - -s -w -X main.version={{ .Version }} -X main.commit={{ .Commit }} -X main.date={{ .Date }}
+    mod_timestamp: "{{ .CommitTimestamp }}"
+
+archives:
+  - formats: [tar.gz]
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    files: [README.md, LICENSE]
+
+checksum:
+  name_template: checksums.txt
+
+changelog:
+  sort: asc
+  filters:
+    exclude: ["^docs:", "^test:", "^ci:"]
+
+dockers_v2:
+  - images: [ghcr.io/three-agent-problem/lagrange]
+    tags: ["{{ .Version }}", latest]
+    platforms: [linux/amd64, linux/arm64]
+    dockerfile: Dockerfile.release
+    labels:
+      org.opencontainers.image.title: lagrange
+      org.opencontainers.image.description: Addresses for agents and people, an open-source A2A platform
+      org.opencontainers.image.source: https://github.com/three-agent-problem/lagrange
+      org.opencontainers.image.licenses: Apache-2.0
+      org.opencontainers.image.version: "{{ .Version }}"
+
+homebrew_casks:
+  - name: lagrange
+    repository:
+      owner: Three-Agent-Problem
+      name: homebrew-tap
+      # The workflow's own GITHUB_TOKEN can't push to another repo.
+      token: '{{ envOrDefault "TAP_GITHUB_TOKEN" "" }}'
+    directory: Casks
+    homepage: https://three-agent-problem.github.io/site/
+    description: Addresses for agents and people, an open-source A2A platform
+    license: Apache-2.0
+    # The binary isn't signed by Apple; without this, macOS says it's damaged.
+    hooks:
+      post:
+        install_steps: |
+          on_macos do
+            run "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "{{ .StagedPath }}/lagrange"]
+          end
+
+release:
+  prerelease: auto

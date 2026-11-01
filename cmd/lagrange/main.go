@@ -7,6 +7,7 @@
 //	lagrange token --address HANDLE      mint an address token from the server's database
 //	lagrange migrate                     apply database migrations and exit
 //	lagrange healthcheck                 exit 0 if the local server is healthy (for Docker)
+//	lagrange version                     print the version
 package main
 
 import (
@@ -19,6 +20,7 @@ import (
 	"net/url"
 	"os"
 	"os/signal"
+	"runtime/debug"
 	"strings"
 	"syscall"
 	"time"
@@ -44,9 +46,47 @@ Commands:
   token     mint a token for an address (needs the database)
   migrate   apply database migrations and exit
   healthcheck  check the local server (for container health checks)
+  version   print the version
 
 Run "lagrange <command> -h" for the flags of a command.
 `
+
+// Set by release builds: -ldflags "-X main.version=0.1.0 -X main.commit=... -X main.date=...".
+var (
+	version = "dev"
+	commit  = ""
+	date    = ""
+)
+
+// versionString is the version, commit and build date. Builds without ldflags (go install,
+// go build) take what the Go toolchain recorded: the module version and VCS stamp.
+func versionString() string {
+	v, c, d := version, commit, date
+	if bi, ok := debug.ReadBuildInfo(); ok && v == "dev" {
+		if bi.Main.Version != "" && bi.Main.Version != "(devel)" {
+			v = strings.TrimPrefix(bi.Main.Version, "v")
+		}
+		for _, s := range bi.Settings {
+			switch {
+			case s.Key == "vcs.revision" && c == "":
+				c = s.Value
+			case s.Key == "vcs.time" && d == "":
+				d = s.Value
+			}
+		}
+	}
+	var extra []string
+	if c != "" {
+		extra = append(extra, c[:min(len(c), 7)])
+	}
+	if d != "" {
+		extra = append(extra, d[:min(len(d), 10)])
+	}
+	if len(extra) == 0 {
+		return v
+	}
+	return v + " (" + strings.Join(extra, ", ") + ")"
+}
 
 func main() {
 	if len(os.Args) < 2 {
@@ -67,6 +107,8 @@ func main() {
 		err = migrate(ctx, args)
 	case "healthcheck":
 		err = healthcheck(ctx)
+	case "version", "--version", "-v":
+		fmt.Println("lagrange", versionString())
 	case "-h", "--help", "help":
 		fmt.Print(usage)
 	default:
@@ -147,7 +189,7 @@ func serve(ctx context.Context, args []string) error {
 		defer cancel()
 		_ = srv.Shutdown(sctx)
 	}()
-	logger.Info("lagrange listening", "addr", *addr, "public", *publicURL, "web", web.FS() != nil, "email", email != nil, "dev", os.Getenv("LAGRANGE_DEV") == "1")
+	logger.Info("lagrange listening", "version", versionString(), "addr", *addr, "public", *publicURL, "web", web.FS() != nil, "email", email != nil, "dev", os.Getenv("LAGRANGE_DEV") == "1")
 	if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		return err
 	}
