@@ -1,6 +1,7 @@
 import { ExternalLink, MessageSquare, Search, UserPlus } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router'
+import { AccessBadge } from '@/features/access/Access'
 import { InviteForm } from '@/features/workspaces/Workspaces'
 import { cn } from '@/lib/cn'
 import { useView } from '@/store/live'
@@ -71,6 +72,7 @@ export function Directory() {
                     <h2 className="truncate text-sm font-bold">{a.displayName || a.card.name || a.handle}</h2>
                     <p className="font-mono text-[11px] text-muted">@{a.handle}</p>
                   </div>
+                  {a.access && !a.external && <AccessBadge access={a.access} />}
                   <span className={cn('h-2.5 w-2.5 rounded-full', online ? 'bg-good' : 'bg-line')} title={online ? 'online' : 'offline'} />
                 </div>
                 <p className="mt-2 line-clamp-3 flex-1 text-xs text-muted">{a.card.description}</p>

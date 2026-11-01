@@ -76,6 +76,9 @@ type Address struct {
 	Description string `json:"description"`
 	// Endpoint is the agent's public base URL. Empty means it connects through a tunnel.
 	Endpoint string `json:"endpoint,omitempty"`
+	// Access is who may start a task with the address (AccessPublic, AccessWorkspace or
+	// AccessConnections).
+	Access string `json:"access"`
 	// WorkspaceID is the agent's workspace. People's addresses have none: they belong to
 	// every workspace the person is a member of.
 	WorkspaceID int64 `json:"workspaceId,omitempty"`
@@ -167,7 +170,8 @@ func (d *Directory) Register(ctx context.Context, r Registration) (*User, error)
 				return err
 			}
 		}
-		if _, err := tx.Exec(ctx, `INSERT INTO addresses (handle, kind, owner_id, display_name) VALUES ($1, 'human', $2, $3)`, r.Handle, u.ID, r.Name); err != nil {
+		// People are reached by their workspaces until they open up.
+		if _, err := tx.Exec(ctx, `INSERT INTO addresses (handle, kind, owner_id, display_name, access) VALUES ($1, 'human', $2, $3, 'workspace')`, r.Handle, u.ID, r.Name); err != nil {
 			return err
 		}
 		ws, role := r.Workspace, r.Role
@@ -310,9 +314,15 @@ func (d *Directory) CreateAgent(ctx context.Context, a *Address) error {
 		a.WorkspaceID = ws.ID
 	}
 	ws := a.WorkspaceID
-	err := d.db.Pool.QueryRow(ctx, `INSERT INTO addresses (handle, kind, owner_id, display_name, description, endpoint, workspace_id)
-		VALUES ($1, 'agent', $2, $3, $4, $5, $6) RETURNING created_at`,
-		a.Handle, owner, a.DisplayName, a.Description, a.Endpoint, ws).Scan(&a.CreatedAt)
+	if a.Access == "" {
+		a.Access = AccessConnections
+	}
+	if !ValidAccess(a.Access) {
+		return fmt.Errorf("directory: access is public, workspace or connections")
+	}
+	err := d.db.Pool.QueryRow(ctx, `INSERT INTO addresses (handle, kind, owner_id, display_name, description, endpoint, workspace_id, access)
+		VALUES ($1, 'agent', $2, $3, $4, $5, $6, $7) RETURNING created_at`,
+		a.Handle, owner, a.DisplayName, a.Description, a.Endpoint, ws, a.Access).Scan(&a.CreatedAt)
 	if pg.IsUniqueViolation(err) {
 		return ErrTaken
 	}
@@ -320,12 +330,12 @@ func (d *Directory) CreateAgent(ctx context.Context, a *Address) error {
 	return err
 }
 
-const addressColumns = `handle, kind, coalesce(owner_id, 0), coalesce(workspace_id, 0), display_name, description, endpoint, card, created_at`
+const addressColumns = `handle, kind, coalesce(owner_id, 0), coalesce(workspace_id, 0), access, display_name, description, endpoint, card, created_at`
 
 func scanAddress(row pgx.Row) (*Address, error) {
 	var a Address
 	var card []byte
-	if err := row.Scan(&a.Handle, &a.Kind, &a.OwnerID, &a.WorkspaceID, &a.DisplayName, &a.Description, &a.Endpoint, &card, &a.CreatedAt); err != nil {
+	if err := row.Scan(&a.Handle, &a.Kind, &a.OwnerID, &a.WorkspaceID, &a.Access, &a.DisplayName, &a.Description, &a.Endpoint, &card, &a.CreatedAt); err != nil {
 		return nil, err
 	}
 	if len(card) > 0 {

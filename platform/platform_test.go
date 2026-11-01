@@ -89,7 +89,7 @@ func (e *env) agent(t *testing.T, handle string) string { return e.agentIn(t, ha
 func (e *env) agentIn(t *testing.T, handle string, workspace int64) string {
 	t.Helper()
 	ctx := t.Context()
-	if err := e.p.Directory.CreateAgent(ctx, &directory.Address{Handle: handle, WorkspaceID: workspace}); err != nil {
+	if err := e.p.Directory.CreateAgent(ctx, &directory.Address{Handle: handle, WorkspaceID: workspace, Access: directory.AccessPublic}); err != nil {
 		t.Fatal(err)
 	}
 	tok, err := e.p.Directory.MintToken(ctx, handle, "test")

@@ -107,6 +107,7 @@ type Platform struct {
 
 	sessions *sessionRegistry
 	limits   *limits
+	rates    *rateLimiter
 	mail     sync.WaitGroup
 	seed     *seeder
 	queue    *pg.WorkQueue
@@ -149,6 +150,7 @@ func New(ctx context.Context, cfg Config) (*Platform, error) {
 		Tasks:     pg.NewTaskStore(db),
 		sessions:  newSessionRegistry(),
 		limits:    &limits{perMinute: cfg.AuthRateLimit},
+		rates:     newRateLimiter(),
 	}
 	bg, stop := context.WithCancel(context.Background())
 	p.stop = stop
@@ -170,7 +172,7 @@ func New(ctx context.Context, cfg Config) (*Platform, error) {
 			Timeout:              10 * time.Second,
 			AllowPrivateNetworks: cfg.AllowPrivatePush,
 		})),
-		a2asrv.WithCallInterceptors(identityInterceptor{}),
+		a2asrv.WithCallInterceptors(identityInterceptor{}, accessInterceptor{p: p}),
 	)
 	p.A2A = settlingCancel{handler}
 	p.Tunnels = &tunnel.Server{
@@ -372,6 +374,14 @@ func (p *Platform) Card(addr *directory.Address) *a2a.AgentCard {
 	}
 	if card.Skills == nil {
 		card.Skills = []a2a.AgentSkill{}
+	}
+	// Who may call is the platform's to decide, so the agent's own schemes don't apply.
+	card.SecuritySchemes, card.SecurityRequirements = nil, nil
+	if addr.Access != directory.AccessPublic {
+		card.SecuritySchemes = a2a.NamedSecuritySchemes{"lagrange": a2a.HTTPAuthSecurityScheme{
+			Scheme: "Bearer", Description: "An address token (lgt_...) of an agent in the address's workspace or in a workspace it accepted a connection from.",
+		}}
+		card.SecurityRequirements = a2a.SecurityRequirementsOptions{{"lagrange": {}}}
 	}
 	return &card
 }

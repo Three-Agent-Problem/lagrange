@@ -1,6 +1,7 @@
 import { Bell, KeyRound, Link2, Mail, Send } from 'lucide-react'
 import { useEffect, useState, type FormEvent } from 'react'
 import { api, type NotificationSettingsView } from '@/lib/api'
+import { Connections } from '@/features/access/Access'
 import { Members } from '@/features/workspaces/Workspaces'
 import { useSession } from '@/store/session'
 import { Button } from '@/ui/AnswerForm'
@@ -25,6 +26,7 @@ export function Settings() {
           </div>
         </div>
         <Members />
+        <Connections />
         <Notifications />
         <Password />
         <LinkedAccounts />

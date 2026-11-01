@@ -141,12 +141,18 @@ A workspace is a team: its agents and its members. People belong to any number o
 
 A workspace sees the traffic of its own addresses: a task is visible when its sender or recipient is one of them. A call from one workspace to another shows in both, and each side's internal delegations stay its own (the other side's tasks are counted as `hidden` on the run). API requests name the workspace with the `Lagrange-Workspace: <slug>` header (`?workspace=` for `/api/events`), and default to the caller's oldest one. Open signup gives each new person a workspace of their own. Invitations carry a workspace and a role; someone who already has an account logs in and joins. Data from before workspaces lands in `default`.
 
+### Who can reach an address
+
+Each address says who may start a task with it (`access`): `public` (anyone, even without a token), `workspace` (agents and people of its workspace) or `connections` (its workspace, plus workspaces whose request to connect it accepted). New agents take `connections`, new people `workspace`; addresses from before stay `public`. Agents' managers change it on the Agents page, and people change their own in Settings.
+
+Another workspace asks in Settings → Connections (`POST /api/connections {to, note}`); the agent's workspace admins, or the person asked, accept, decline or block (`PUT /api/connections/{id} {status, ratePerMin}`), and get an email when SMTP is set. An accepted connection lets the asking workspace's agents (with their own token) and people start tasks, up to `ratePerMin` new tasks a minute (default 60, per replica). Refusals are A2A errors: `UNAUTHENTICATED` (401) without credentials, `UNAUTHORIZED` (403) otherwise, with a message that says what to do. Follow-up calls on a task stay with its sender. The card of a non-public address declares a bearer `securitySchemes` entry.
+
 | Package | What it does |
 |---|---|
 | [`cmd/lagrange`](cmd/lagrange/main.go) | `serve`, `tunnel`, `token`, `migrate`, `healthcheck`. |
 | [`platform`](platform/) | Wires it together: routes, auth (sessions and address tokens), the API, the web app. |
 | [`relay`](relay/) | The executor behind every address: forwards to agents, parks tasks for people, records links and activity. |
-| [`directory`](directory/) | Addresses (agents and people), tokens, users, sessions, workspaces and members, stored cards. |
+| [`directory`](directory/) | Addresses (agents and people) and their access, tokens, users, sessions, workspaces and members, connections, stored cards. |
 | [`mailbox`](mailbox/) | Tunnel sessions per address, capacity, waiting deliveries. |
 | [`tunnel`](tunnel/) | The tunnel server and client (WebSocket + yamux, reconnects with backoff). |
 | [`activity`](activity/) | The activity log and its live stream, and the recorder of every HTTP exchange. |
@@ -274,6 +280,7 @@ And two HTTP headers (gRPC metadata) that agents on the platform send with their
 - On the platform, a task whose agent disconnects mid-task waits in the mailbox and is redelivered (followed if the agent still has it, sent again if not), at most 5 times per execution. Agents should treat a repeated message ID as the same request.
 - a2a-go's cluster-mode cancel can report a waiting task as not cancelable while the cancel is still running; the platform waits for the cancel to settle instead.
 - Recorded HTTP exchanges are kept forever for now (no pruning yet), up to 64 KB per body. They hold message contents, so treat the database as sensitive.
+- A refused new task is recorded as an HTTP exchange (the 401/403), but it creates no task, so it doesn't show in Runs. A rate-limited call is a 403 `UNAUTHORIZED` too, because A2A has no rate-limit error; its message says so.
 - A run groups calls by the `Lagrange-Task` header. An agent that doesn't send it on its own calls still gets its tasks recorded, but as separate runs.
 
 ## Roadmap

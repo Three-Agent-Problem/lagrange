@@ -33,6 +33,7 @@ func (p *Platform) api(mux *http.ServeMux) {
 	mux.Handle("GET /api/me", p.authedAny(p.handleMe))
 	p.accountRoutes(mux)
 	p.workspaceRoutes(mux)
+	p.accessRoutes(mux)
 	mux.Handle("GET /api/users", p.in(directory.RoleViewer, p.handleUsers))
 	mux.Handle("POST /api/users", p.in(directory.RoleAdmin, p.handleCreateUser))
 	mux.Handle("GET /api/addresses", p.in(directory.RoleViewer, p.handleAddresses))
@@ -195,6 +196,10 @@ func statusOf(err error) int {
 		return http.StatusNotFound
 	case errors.Is(err, a2a.ErrInvalidParams), errors.Is(err, a2a.ErrInvalidRequest):
 		return http.StatusBadRequest
+	case errors.Is(err, a2a.ErrUnauthorized):
+		return http.StatusForbidden
+	case errors.Is(err, a2a.ErrUnauthenticated):
+		return http.StatusUnauthorized
 	}
 	if strings.HasPrefix(err.Error(), "directory: ") {
 		return http.StatusBadRequest
@@ -273,13 +278,13 @@ func (p *Platform) TunnelCommand(token string) string {
 }
 
 func (p *Platform) handleCreateAddress(w http.ResponseWriter, r *http.Request, me *directory.User, s *scope) {
-	var body struct{ Handle, DisplayName, Description, Endpoint string }
+	var body struct{ Handle, DisplayName, Description, Endpoint, Access string }
 	if err := decode(r, &body); err != nil {
-		apiError(w, http.StatusBadRequest, "send {handle, displayName, description, endpoint}")
+		apiError(w, http.StatusBadRequest, "send {handle, displayName, description, endpoint, access}")
 		return
 	}
 	a := &directory.Address{Handle: strings.ToLower(strings.TrimSpace(body.Handle)), OwnerID: me.ID, WorkspaceID: s.ID,
-		DisplayName: body.DisplayName, Description: body.Description, Endpoint: strings.TrimSuffix(body.Endpoint, "/")}
+		DisplayName: body.DisplayName, Description: body.Description, Endpoint: strings.TrimSuffix(body.Endpoint, "/"), Access: body.Access}
 	if err := p.Directory.CreateAgent(r.Context(), a); err != nil {
 		apiError(w, statusOf(err), err.Error())
 		return

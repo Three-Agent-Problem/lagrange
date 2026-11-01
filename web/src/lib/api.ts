@@ -73,6 +73,8 @@ export type Address = {
   displayName: string
   description: string
   endpoint?: string
+  /** Who may start a task with it. */
+  access: Access
   card: AgentCard
   cardUrl: string
   online: boolean
@@ -81,6 +83,25 @@ export type Address = {
   stats: Stats
   sessions: Session[]
   createdAt: string
+}
+
+export type Access = 'public' | 'workspace' | 'connections'
+
+export type ConnectionStatus = 'pending' | 'accepted' | 'declined' | 'blocked'
+
+/** A workspace's standing to reach an address of another workspace. */
+export type Connection = {
+  id: number
+  from: number
+  fromName: string
+  to: string
+  status: ConnectionStatus
+  note: string
+  ratePerMin: number
+  requestedBy?: string
+  decidedBy?: string
+  createdAt: string
+  decidedAt?: string
 }
 
 export type Token = { handle: string; label: string; prefix: string; createdAt: string; lastUsed?: string }
@@ -275,13 +296,18 @@ export const api = {
   members: () => call<{ members: Member[]; workspace: Workspace }>('GET', '/api/workspace/members'),
   setRole: (userId: number, role: Role) => call<void>('PUT', `/api/workspace/members/${userId}`, { role }),
   removeMember: (userId: number) => call<void>('DELETE', `/api/workspace/members/${userId}`, {}),
+  setAccess: (handle: string, access: Access) => call<void>('PUT', `/api/addresses/${encodeURIComponent(handle)}/access`, { access }),
+  connections: () => call<{ incoming: Connection[]; outgoing: Connection[] }>('GET', '/api/connections'),
+  requestConnection: (to: string, note: string) => call<{ connection: Connection }>('POST', '/api/connections', { to, note }),
+  decideConnection: (id: number, status: ConnectionStatus, ratePerMin = 0) => call<{ connection: Connection }>('PUT', `/api/connections/${id}`, { status, ratePerMin }),
+  endConnection: (id: number) => call<void>('DELETE', `/api/connections/${id}`, {}),
   /** Dev servers only (LAGRANGE_DEV=1): delete every agent and all traffic, keep people; with seed, run the seed again. */
   devReset: (seed: boolean) => call<void>('POST', '/api/dev/reset', { seed }),
   login: (email: string, password: string) => call<User>('POST', '/api/login', { email, password }),
   logout: () => call<void>('POST', '/api/logout', {}),
   users: () => call<{ users: User[] }>('GET', '/api/users'),
   addresses: () => call<{ addresses: Address[] }>('GET', '/api/addresses'),
-  createAddress: (a: { handle: string; displayName?: string; description?: string; endpoint?: string }) =>
+  createAddress: (a: { handle: string; displayName?: string; description?: string; endpoint?: string; access?: Access }) =>
     call<{ address: Address; token: string; command: string }>('POST', '/api/addresses', a),
   deleteAddress: (handle: string) => call<void>('DELETE', `/api/addresses/${handle}`, {}),
   tokens: (handle: string) => call<{ tokens: Token[] }>('GET', `/api/addresses/${handle}/tokens`),

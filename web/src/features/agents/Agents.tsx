@@ -1,8 +1,10 @@
 import { KeyRound, Plus, Trash2 } from 'lucide-react'
 import { useEffect, useState, type FormEvent } from 'react'
 import { useSearchParams } from 'react-router'
+import { AccessPicker } from '@/features/access/Access'
+import { accessHint, ACCESS } from '@/features/access/options'
 import { Connect } from '@/features/agents/Connect'
-import { api, type Address, type Token } from '@/lib/api'
+import { api, type Access, type Address, type Token } from '@/lib/api'
 import { cn } from '@/lib/cn'
 import { useView } from '@/store/live'
 import { useCan, useSession } from '@/store/session'
@@ -58,7 +60,7 @@ export function Agents() {
           {mine.length === 0 && !creating && !secret && member && <FirstAgent onStart={() => setCreating(true)} />}
           {!member && <p className="text-sm text-muted">You are a viewer in this workspace: its agents are in the Directory, and members and admins add new ones.</p>}
           {mine.map((a) => (
-            <AgentCard key={a.handle} a={a} live={model.presence[a.handle]} publicUrl={publicUrl} onSecret={setSecret} onDeleted={() => void refreshAddresses()} />
+            <AgentCard key={a.handle} a={a} live={model.presence[a.handle]} publicUrl={publicUrl} onSecret={setSecret} onChanged={() => void refreshAddresses()} />
           ))}
         </div>
 
@@ -72,7 +74,7 @@ export function Agents() {
           <CodeLine text={`lagrange tunnel --server ${publicUrl} --token <token> --acp claude-agent-acp --dir ~/code/project`} />
           <p className="text-muted">
             Run the same command on several machines to add workers: tasks spread across them. An agent with a public URL can skip the tunnel: set its endpoint when you create it. Others reach every address at{' '}
-            <code className="font-mono text-ink">{publicUrl}/a/&lt;handle&gt;</code>.
+            <code className="font-mono text-ink">{publicUrl}/a/&lt;handle&gt;</code>, as far as its access allows: outside workspaces ask to connect in Settings → Connections, then call with their own agent’s token.
           </p>
         </section>
       </div>
@@ -102,7 +104,7 @@ function FirstAgent({ onStart }: { onStart: () => void }) {
 }
 
 function Create({ onDone, onCancel }: { onDone: (r: { handle: string; token: string }) => void; onCancel: () => void }) {
-  const [form, setForm] = useState({ handle: '', displayName: '', description: '', endpoint: '' })
+  const [form, setForm] = useState({ handle: '', displayName: '', description: '', endpoint: '', access: 'connections' as Access })
   const [error, setError] = useState('')
   const submit = async (e: FormEvent) => {
     e.preventDefault()
@@ -113,7 +115,7 @@ function Create({ onDone, onCancel }: { onDone: (r: { handle: string; token: str
       setError((err as Error).message)
     }
   }
-  const field = (k: keyof typeof form, label: string, placeholder: string) => (
+  const field = (k: Exclude<keyof typeof form, 'access'>, label: string, placeholder: string) => (
     <label className="flex flex-col gap-1 text-xs font-semibold text-muted">
       {label}
       <input className="input" placeholder={placeholder} value={form[k]} onChange={(e) => setForm({ ...form, [k]: e.target.value })} />
@@ -125,6 +127,17 @@ function Create({ onDone, onCancel }: { onDone: (r: { handle: string; token: str
       {field('displayName', 'Name', 'Acme Buyer')}
       <div className="sm:col-span-2">{field('description', 'Description', 'Buys merch from approved suppliers')}</div>
       <div className="sm:col-span-2">{field('endpoint', 'Public endpoint (optional, skips the tunnel)', 'https://agent.example.com')}</div>
+      <label className="flex flex-col gap-1 text-xs font-semibold text-muted sm:col-span-2">
+        Who can send it tasks
+        <select className="input" value={form.access} onChange={(e) => setForm({ ...form, access: e.target.value as Access })}>
+          {ACCESS.map((a) => (
+            <option key={a.access} value={a.access}>
+              {a.label}
+            </option>
+          ))}
+        </select>
+        <span className="font-normal">{accessHint(form.access)}</span>
+      </label>
       {error && <p className="text-xs font-semibold text-bad sm:col-span-2">{error}</p>}
       <div className="flex gap-2 sm:col-span-2">
         <Button type="submit">Create address</Button>
@@ -136,7 +149,7 @@ function Create({ onDone, onCancel }: { onDone: (r: { handle: string; token: str
   )
 }
 
-function AgentCard({ a, live, publicUrl, onSecret, onDeleted }: { a: Address; live?: Address['stats']; publicUrl: string; onSecret: (s: { handle: string; token: string }) => void; onDeleted: () => void }) {
+function AgentCard({ a, live, publicUrl, onSecret, onChanged }: { a: Address; live?: Address['stats']; publicUrl: string; onSecret: (s: { handle: string; token: string }) => void; onChanged: () => void }) {
   const [tokens, setTokens] = useState<Token[]>()
   const stats = live ?? a.stats
   const online = !!a.endpoint || stats.sessions > 0
@@ -169,7 +182,7 @@ function AgentCard({ a, live, publicUrl, onSecret, onDeleted }: { a: Address; li
             className="rounded-lg p-2 text-muted hover:bg-bad-soft hover:text-bad"
             title="Delete address"
             onClick={() => {
-              if (confirm(`Delete @${a.handle}? Its tokens stop working.`)) void api.deleteAddress(a.handle).then(onDeleted)
+              if (confirm(`Delete @${a.handle}? Its tokens stop working.`)) void api.deleteAddress(a.handle).then(onChanged)
             }}
           >
             <Trash2 size={15} />
@@ -200,6 +213,10 @@ function AgentCard({ a, live, publicUrl, onSecret, onDeleted }: { a: Address; li
           ))}
         </ul>
       )}
+      <div className="mt-4">
+        <p className="mb-1.5 text-[11px] font-bold text-muted uppercase">Who can send it tasks</p>
+        <AccessPicker handle={a.handle} value={a.access} onSaved={onChanged} />
+      </div>
       {a.card.skills.length > 0 && (
         <div className="mt-3 flex flex-wrap gap-1">
           {a.card.skills.map((s) => (
