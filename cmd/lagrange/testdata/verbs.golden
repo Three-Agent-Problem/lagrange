@@ -1,0 +1,93 @@
+$ ada: lagrange send @echo hello from CI --wait
+You said: hello from CI
+hello from CI
+! completed (task <id1>)
+[exit 0]
+
+$ ada: lagrange send @bob Approve 200 hoodies for 2,800 EUR?
+<id2>
+! Sent to @bob (input-required). Check on it with: lagrange task <id2> --wait
+[exit 0]
+
+$ bob: lagrange waiting --mine
+TASK                                  WAITING ON  ASKED BY  SINCE     QUESTION
+<id2>  @bob (you)  @ada      just now  Approve 200 hoodies for 2,800 EUR?
+[exit 0]
+
+$ ada: lagrange task <id2> --wait
+Go ahead.
+! Waiting on @bob…
+! completed, answered by @bob (task <id2>)
+[exit 0]
+
+$ ada: lagrange send @bob Ship the release?
+<id3>
+! Sent to @bob (input-required). Check on it with: lagrange task <id3> --wait
+[exit 0]
+
+$ bob: lagrange answer <id3> --reject Not on a Friday.
+! Answered <id3>.
+[exit 0]
+
+$ ada: lagrange task <id3> --wait
+Not on a Friday.
+! rejected, answered by @bob (task <id3>)
+! lagrange: the task was rejected
+[exit 3]
+
+$ ada: lagrange send @bob Lunch? --wait --timeout 200ms
+! Waiting on @bob…
+! input-required, waiting on @bob (task <id4>)
+! lagrange: still input-required; the task goes on. Wait again with: lagrange task <id4> --wait
+[exit 4]
+
+$ ada: lagrange send @ada Remember the milk --wait
+! input-required, waiting on @ada (task <id5>)
+! lagrange: the task asks you. Answer with: lagrange answer <id5> "…"
+[exit 5]
+
+$ ada: lagrange send @echo --data {"order":"PO-1","qty":200} --wait --json
+{
+  "taskId": "<id6>",
+  "contextId": "<id7>",
+  "state": "completed",
+  "done": true,
+  "text": "You said: {\"order\":\"PO-1\",\"qty\":200}\n{\"order\":\"PO-1\",\"qty\":200}"
+}
+[exit 0]
+
+$ ada: lagrange send @nobody hi
+! lagrange: no such address: @nobody
+[exit 1]
+
+$ bob: lagrange answer <id2> --approve
+! lagrange: the task isn't waiting for an answer
+[exit 1]
+
+$ ada: lagrange runs --limit 3
+RUN                                   STATE                  FROM → TO     UPDATED   TITLE
+<id6>  completed              @ada → @echo  just now  {"order":"PO-1","qty":200}
+<id5>  input-required (@ada)  @ada → @ada   just now  Remember the milk
+<id4>  input-required (@bob)  @ada → @bob   just now  Lunch?
+[exit 0]
+
+$ ada: lagrange runs -q hoodies
+RUN                                   STATE      FROM → TO    UPDATED   TITLE
+<id2>  completed  @ada → @bob  just now  Approve 200 hoodies for 2,800 EUR?
+[exit 0]
+
+$ ada: lagrange run <id2>
+Approve 200 hoodies for 2,800 EUR?
+completed · @ada → @bob · 1 task · started just now
+Outcome: Go ahead.
+
+TASK                                  STATE              FROM → TO    SUMMARY
+<id2>  completed by @bob  @ada → @bob  Approve 200 hoodies for 2,800 EUR?
+[exit 0]
+
+$ ada: lagrange waiting
+TASK                                  WAITING ON  ASKED BY  SINCE     QUESTION
+<id4>  @bob        @ada      just now  Lunch?
+<id5>  @ada (you)  @ada      just now  Remember the milk
+[exit 0]
+

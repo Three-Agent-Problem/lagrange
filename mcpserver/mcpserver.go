@@ -18,9 +18,6 @@ import (
 	"github.com/three-agent-problem/lagrange/client"
 )
 
-// answeredByKey is the message metadata key that says who answered from the inbox.
-const answeredByKey = "https://threeagents.dev/ext/answered-by/v1"
-
 const (
 	defaultSendWait = 60 * time.Second
 	defaultAskWait  = 120 * time.Second
@@ -79,76 +76,9 @@ func New(c *client.Client, version string, opts Options) *mcp.Server {
 // --- results ---
 
 // TaskResult is a task's state and what it answered.
-type TaskResult struct {
-	TaskID    string `json:"taskId"`
-	ContextID string `json:"contextId,omitempty"`
-	State     string `json:"state" jsonschema:"submitted, working, input-required, auth-required, completed, failed, canceled or rejected"`
-	// Done is true once the task reached a final state.
-	Done bool `json:"done"`
-	// Text is the latest status message and any text artifacts.
-	Text string `json:"text,omitempty"`
-	// Data holds structured parts of the answer.
-	Data       []any  `json:"data,omitempty"`
-	AnsweredBy string `json:"answeredBy,omitempty"`
-	// WaitingOn is the person a waiting task waits for.
-	WaitingOn string `json:"waitingOn,omitempty"`
-	Note      string `json:"note,omitempty"`
-}
-
-func shortState(s string) string {
-	return strings.ReplaceAll(strings.ToLower(strings.TrimPrefix(s, "TASK_STATE_")), "_", "-")
-}
+type TaskResult = client.Result
 
 func terminal(s a2a.TaskState) bool { return s.Terminal() }
-
-func waiting(s a2a.TaskState) bool {
-	return s == a2a.TaskStateInputRequired || s == a2a.TaskStateAuthRequired
-}
-
-func resultOf(t *a2a.Task, awaiting string) *TaskResult {
-	r := &TaskResult{TaskID: string(t.ID), ContextID: t.ContextID, State: shortState(string(t.Status.State)), Done: terminal(t.Status.State)}
-	var texts []string
-	add := func(parts []*a2a.Part) {
-		for _, p := range parts {
-			if p == nil {
-				continue
-			}
-			if tx := p.Text(); tx != "" {
-				texts = append(texts, tx)
-			} else if d := p.Data(); d != nil {
-				r.Data = append(r.Data, d)
-			}
-		}
-	}
-	if m := t.Status.Message; m != nil {
-		add(m.Parts)
-		if by, ok := m.Metadata[answeredByKey].(string); ok {
-			r.AnsweredBy = by
-		}
-	}
-	for _, a := range t.Artifacts {
-		add(a.Parts)
-	}
-	r.Text = strings.Join(texts, "\n")
-	if waiting(t.Status.State) {
-		r.WaitingOn = awaiting
-	}
-	return r
-}
-
-func messageResult(m *a2a.Message) *TaskResult {
-	r := &TaskResult{State: "completed", Done: true, Note: "The address answered directly, without a task."}
-	var texts []string
-	for _, p := range m.Parts {
-		if tx := p.Text(); tx != "" {
-			texts = append(texts, tx)
-		} else if d := p.Data(); d != nil {
-			r.Data = append(r.Data, d)
-		}
-	}
-	r.Text = strings.Join(texts, "\n")
-	return r
-}
 
 // --- tools ---
 
@@ -258,9 +188,9 @@ func (s *server) sendTask(ctx context.Context, _ *mcp.CallToolRequest, in sendTa
 		return nil, nil, err
 	}
 	if res.Message != nil {
-		return nil, messageResult(res.Message), nil
+		return nil, client.MessageResult(res.Message), nil
 	}
-	r, err := s.follow(ctx, string(res.Task.ID), waitFor(in.WaitSeconds, defaultSendWait), func(st a2a.TaskState) bool { return terminal(st) || waiting(st) })
+	r, err := s.follow(ctx, string(res.Task.ID), waitFor(in.WaitSeconds, defaultSendWait), func(st a2a.TaskState) bool { return terminal(st) || client.Waiting(st) })
 	return nil, r, err
 }
 
@@ -288,7 +218,7 @@ func (s *server) askHuman(ctx context.Context, _ *mcp.CallToolRequest, in askHum
 		return nil, nil, err
 	}
 	if res.Message != nil {
-		return nil, messageResult(res.Message), nil
+		return nil, client.MessageResult(res.Message), nil
 	}
 	r, err := s.follow(ctx, string(res.Task.ID), waitFor(in.WaitSeconds, defaultAskWait), terminal)
 	return nil, r, err
@@ -296,29 +226,15 @@ func (s *server) askHuman(ctx context.Context, _ *mcp.CallToolRequest, in askHum
 
 // follow polls a task until done says so or the wait runs out, and returns where it is.
 func (s *server) follow(ctx context.Context, id string, wait time.Duration, done func(a2a.TaskState) bool) (*TaskResult, error) {
-	deadline := time.Now().Add(wait)
-	for {
-		t, err := s.c.Task(ctx, id)
-		if err != nil {
-			return nil, err
-		}
-		if t.Task != nil && done(t.Task.Status.State) {
-			return resultOf(t.Task, t.Awaiting), nil
-		}
-		if !time.Now().Before(deadline) {
-			r := &TaskResult{TaskID: id, ContextID: t.ContextID, State: shortState(t.State)}
-			if t.Task != nil {
-				r = resultOf(t.Task, t.Awaiting)
-			}
-			r.Note = "Still " + r.State + ". Call get_task with this taskId later; don't send it again."
-			return r, nil
-		}
-		select {
-		case <-ctx.Done():
-			return nil, ctx.Err()
-		case <-time.After(s.poll):
-		}
+	t, ok, err := s.c.Follow(ctx, id, wait, s.poll, func(t *client.Task) bool { return done(t.Task.Status.State) })
+	if err != nil {
+		return nil, err
 	}
+	r := t.Result()
+	if !ok {
+		r.Note = "Still " + r.State + ". Call get_task with this taskId later; don't send it again."
+	}
+	return r, nil
 }
 
 type taskIn struct {
@@ -330,10 +246,7 @@ func (s *server) getTask(ctx context.Context, _ *mcp.CallToolRequest, in taskIn)
 	if err != nil {
 		return nil, nil, err
 	}
-	if t.Task == nil {
-		return nil, &TaskResult{TaskID: t.ID, State: shortState(t.State)}, nil
-	}
-	return nil, resultOf(t.Task, t.Awaiting), nil
+	return nil, t.Result(), nil
 }
 
 type waitSummary struct {
@@ -439,7 +352,7 @@ func at(hs []string) []string {
 }
 
 func summarizeRun(r *client.Run) runSummary {
-	return runSummary{RunID: r.ID, Title: r.Title, State: shortState(r.State), Outcome: r.Outcome, Starter: "@" + r.Starter, Recipient: "@" + r.Recipient,
+	return runSummary{RunID: r.ID, Title: r.Title, State: client.ShortState(r.State), Outcome: r.Outcome, Starter: "@" + r.Starter, Recipient: "@" + r.Recipient,
 		WaitingOn: at(r.Waiting), Participants: at(r.Participants), Tasks: r.Tasks, UpdatedAt: r.UpdatedAt.Format(time.RFC3339)}
 }
 
@@ -490,9 +403,9 @@ func (s *server) getRun(ctx context.Context, _ *mcp.CallToolRequest, in runIn) (
 	}
 	out := getRunOut{Run: summarizeRun(d.Run), Tasks: []runTask{}}
 	for _, t := range d.Tasks {
-		rt := runTask{TaskID: t.ID, Parent: t.ParentTaskID, From: "@" + t.Sender, To: "@" + t.Recipient, State: shortState(t.State), Summary: t.Summary}
+		rt := runTask{TaskID: t.ID, Parent: t.ParentTaskID, From: "@" + t.Sender, To: "@" + t.Recipient, State: client.ShortState(t.State), Summary: t.Summary}
 		if t.Task != nil {
-			r := resultOf(t.Task, t.Awaiting)
+			r := t.Result()
 			rt.Answer, rt.AnsweredBy, rt.WaitingOn = r.Text, r.AnsweredBy, r.WaitingOn
 		}
 		out.Tasks = append(out.Tasks, rt)

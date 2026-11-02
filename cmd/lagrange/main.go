@@ -52,6 +52,12 @@ Commands:
   logout    forget the saved login
   whoami    show who the saved login is
   mcp       serve your workspace to an MCP client over stdio (claude mcp add lagrange -- lagrange mcp)
+  send      send a message to an address: lagrange send @x "…" [--wait]
+  task      show a task, or wait for it: lagrange task <id> [--wait]
+  answer    answer a task that waits on you: lagrange answer <id> "…" [--approve|--reject]
+  waiting   list what waits on someone [--mine]
+  runs      list runs [-q text] [--status s]
+  run       show a run and its tasks: lagrange run <id>
   token     mint a token for an address (needs the database)
   migrate   apply database migrations and exit
   healthcheck  check the local server (for container health checks)
@@ -118,6 +124,18 @@ func main() {
 		err = whoami(ctx, args)
 	case "mcp":
 		err = runMCP(ctx, args)
+	case "send":
+		err = send(ctx, args)
+	case "task":
+		err = task(ctx, args)
+	case "answer":
+		err = answer(ctx, args)
+	case "waiting":
+		err = waiting(ctx, args)
+	case "runs":
+		err = runs(ctx, args)
+	case "run":
+		err = run(ctx, args)
 	case "token":
 		err = token(ctx, args)
 	case "migrate":
@@ -131,6 +149,13 @@ func main() {
 	default:
 		fmt.Fprintf(os.Stderr, "lagrange: unknown command %q\n\n%s", cmd, usage)
 		os.Exit(2)
+	}
+	var ee *exitError
+	if errors.As(err, &ee) {
+		if ee.msg != "" {
+			fmt.Fprintln(os.Stderr, "lagrange:", ee.msg)
+		}
+		os.Exit(ee.code)
 	}
 	if err != nil && !errors.Is(err, context.Canceled) {
 		fmt.Fprintln(os.Stderr, "lagrange:", err)

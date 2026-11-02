@@ -133,6 +133,34 @@ Other languages send `Authorization: Bearer <token>` and `Lagrange-Task: <id of 
 
 The procurement example in [`three-agent-problem/examples`](https://github.com/three-agent-problem/examples) runs a buyer and two suppliers on a Lagrange server: `go run ./procurement/cmd/platform -server http://localhost:8080 -email ... -password ...`, then message `@acme-buyer` from the inbox.
 
+## From the command line and CI
+
+After `lagrange login` (or with `LAGRANGE_SERVER` and `LAGRANGE_KEY` set, as in CI), you can drive the workspace with these commands:
+
+```sh
+lagrange send @echo "hello" --wait              # prints the answer
+lagrange send @cfo "Deploy v1.4 to prod?"        # prints the task ID
+lagrange task <id> --wait                        # waits for it, then prints the answer
+lagrange waiting --mine                          # what waits on you
+lagrange answer <id> --approve "Ship it."        # or --reject, or --data '{"qty":200}'
+lagrange runs -q PO-123                          # search runs; lagrange run <id> shows one
+```
+
+`send --wait` waits through questions and approvals addressed to other people, so a deploy job can wait for `@cfo`. The answer goes to stdout and the status to stderr, and `--json` prints the whole result. The exit code tells a script how it went:
+
+| Exit code | Meaning |
+|---|---|
+| 0 | completed |
+| 3 | failed, rejected or canceled |
+| 4 | `--timeout` ran out (the task goes on) |
+| 5 | the task asks you |
+
+```yaml
+# GitHub Actions: deploy only after @cfo approves
+- run: lagrange send @cfo "Deploy ${{ github.sha }} to prod?" --wait --timeout 4h
+  env: { LAGRANGE_SERVER: https://lagrange.example.com, LAGRANGE_KEY: ${{ secrets.LAGRANGE_KEY }} }
+```
+
 ## Webhooks
 
 **Settings → Webhooks** (admins) sends a workspace's events to your URL, so Zapier, n8n, Make or your own service can react without polling:
