@@ -32,7 +32,8 @@ import (
 func (p *Platform) api(mux *http.ServeMux) {
 	mux.Handle("POST /api/login", p.public(p.handleLogin))
 	mux.HandleFunc("POST /api/logout", p.handleLogout)
-	mux.Handle("GET /api/me", p.authedAny(p.handleMe))
+	mux.Handle("GET /api/me", p.session(p.handleMe, false, true))
+	p.keyRoutes(mux)
 	p.accountRoutes(mux)
 	p.workspaceRoutes(mux)
 	p.accessRoutes(mux)
@@ -77,14 +78,31 @@ type apiHandler func(w http.ResponseWriter, r *http.Request, me *directory.User)
 // authed requires a session of someone who confirmed their email. State-changing
 // requests must be JSON, which a cross-site form can't send without a CORS preflight;
 // with the SameSite=Lax cookie that keeps the API safe from CSRF.
-func (p *Platform) authed(h apiHandler) http.Handler { return p.session(h, true) }
+// API keys work only where a handler opts in (workspace routes, through in); everything
+// else, such as managing keys, passwords and workspaces, needs a real session.
+func (p *Platform) authed(h apiHandler) http.Handler { return p.session(h, true, false) }
 
 // authedAny is authed for people who haven't confirmed their email yet.
-func (p *Platform) authedAny(h apiHandler) http.Handler { return p.session(h, false) }
+func (p *Platform) authedAny(h apiHandler) http.Handler { return p.session(h, false, false) }
 
-func (p *Platform) session(h apiHandler, verified bool) http.Handler {
+func (p *Platform) session(h apiHandler, verified, keys bool) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		me := p.sessionUser(r)
+		var me *directory.User
+		if secret, ok := bearerKey(r); ok {
+			if !keys {
+				apiError(w, http.StatusForbidden, "API keys can't do this: log in to the web app")
+				return
+			}
+			u, grant, err := p.Directory.APIKeyUser(r.Context(), secret)
+			if err != nil {
+				apiError(w, http.StatusUnauthorized, "unknown or revoked API key")
+				return
+			}
+			me = u
+			r = r.WithContext(context.WithValue(r.Context(), keyGrantKey{}, grant))
+		} else {
+			me = p.sessionUser(r)
+		}
 		if me == nil {
 			apiError(w, http.StatusUnauthorized, "log in first")
 			return
@@ -149,10 +167,14 @@ func (p *Platform) handleMe(w http.ResponseWriter, r *http.Request, me *director
 		apiError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{
+	out := map[string]any{
 		"user": me, "identities": identities, "workspaces": workspaces, "auth": p.authMethods(),
 		"publicUrl": p.cfg.PublicURL, "dev": p.cfg.Dev, "devSeed": p.seed != nil,
-	})
+	}
+	if g := keyGrantOf(r.Context()); g != nil {
+		out["key"] = map[string]string{"workspace": g.Workspace, "role": g.Role}
+	}
+	writeJSON(w, http.StatusOK, out)
 }
 
 // handleUsers lists the workspace's members.

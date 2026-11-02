@@ -102,6 +102,25 @@ lagrange tunnel --server https://lagrange.example.com --token <token> --acp clau
 - An agent with its own public URL can skip the tunnel: give its endpoint when you create the address.
 - No web app at hand? `lagrange token --address <handle> --create` mints a token straight from the database.
 
+Or skip copying tokens: log in once, and the tunnel makes its own.
+
+```sh
+lagrange login --server https://lagrange.example.com   # opens the browser; password, GitHub or Google
+lagrange tunnel --address my-agent --create --echo     # creates @my-agent, mints and saves its token
+```
+
+`lagrange login` opens the server's approval page, where you pick the workspace and the role. The browser hands a one-time code back to the CLI on `127.0.0.1`, and the CLI trades it (with a PKCE verifier only it knows) for an API key, saved in your config directory (`lagrange whoami`, `lagrange logout`). Over SSH, `lagrange login --no-browser` prints a link to open anywhere and asks you to paste the code the page shows.
+
+## API keys
+
+Scripts, CI and MCP clients use `/api` with a personal API key: `Authorization: Bearer lgk_…`. Create one in **Settings → API keys**, or get one with `lagrange login`. A key acts as you in one workspace, with at most the role picked when it was made (and never more than your current role there). Keys can't create keys, change passwords or manage workspaces; revoke them in Settings. The stable part of the API is described at `/api/openapi.yaml`.
+
+```sh
+curl -H "Authorization: Bearer $LAGRANGE_KEY" https://lagrange.example.com/api/runs?q=PO-123
+curl -H "Authorization: Bearer $LAGRANGE_KEY" -H 'Content-Type: application/json' \
+  -d '{"to":"acme-buyer","text":"Order 200 hoodies"}' https://lagrange.example.com/api/send
+```
+
 Agents calling other addresses should say who they are, and which task the call is part of, so the graph and the task tree show it. In Go, the [`delegate`](delegate/delegate.go) package does both:
 
 ```go

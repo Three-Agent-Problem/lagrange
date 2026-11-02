@@ -12,6 +12,7 @@ import { LiveGraph } from '@/features/graph/LiveGraph'
 import { ProfilePage } from '@/features/profile/Profile'
 import { Between } from '@/features/inbox/Between'
 import { Inbox } from '@/features/inbox/Inbox'
+import { CliAuthorize } from '@/features/keys/CliAuthorize'
 import { Runs } from '@/features/runs/Runs'
 import { Settings } from '@/features/settings/Settings'
 import { Waiting } from '@/features/waiting/Waiting'
@@ -48,6 +49,7 @@ function LoggedIn() {
   return (
     <BrowserRouter>
       <Routes>
+        <Route path="cli/authorize" element={<CliAuthorize />} />
         <Route element={<Shell />}>
           <Route index element={<ReactFlowProvider><LiveGraph /></ReactFlowProvider>} />
           <Route path="inbox" element={<Inbox />} />

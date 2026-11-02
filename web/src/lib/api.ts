@@ -57,6 +57,9 @@ export type Workspace = { id: number; slug: string; name: string; role: Role }
 
 export type Member = User & { role: Role; joinedAt: string }
 
+/** A personal API key, without its secret. */
+export type APIKey = { id: number; name: string; prefix: string; role: Role; workspace: string; createdAt: string; lastUsed?: string }
+
 /** An invitation into a workspace. existing: the email has an account, so they log in to join. */
 export type Invite = { email: string; invitedBy: string; workspace: string; role: Role; existing: boolean; link?: string; emailed: boolean }
 
@@ -354,6 +357,12 @@ export const api = {
   waiting: () => call<{ waiting: Wait[]; policy: WaitPolicy }>('GET', '/api/waiting'),
   remind: (taskId: string) => call<void>('POST', `/api/waiting/${encodeURIComponent(taskId)}/remind`, {}),
   setWaitPolicy: (p: WaitPolicy) => call<{ policy: WaitPolicy }>('PUT', '/api/settings/wait-policy', p),
+  apiKeys: () => call<{ keys: APIKey[] }>('GET', '/api/keys'),
+  createAPIKey: (k: { name: string; workspace: string; role: Role }) => call<{ key: APIKey; secret: string }>('POST', '/api/keys', k),
+  revokeAPIKey: (id: number) => call<void>('DELETE', `/api/keys/${id}`, {}),
+  /** Approves a `lagrange login`; redirect is set when the CLI listens on 127.0.0.1. */
+  authorizeCLI: (r: { challenge: string; name: string; port: number; workspace: string; role: Role }) =>
+    call<{ code: string; redirect?: string }>('POST', '/api/cli/authorize', r),
   archiveRun: (id: string, archived: boolean) => call<void>(archived ? 'POST' : 'DELETE', `/api/runs/${encodeURIComponent(id)}/archive`, {}),
 }
 

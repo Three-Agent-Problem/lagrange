@@ -407,6 +407,7 @@ type api struct {
 	url string
 	c   *http.Client
 	ws  string
+	key string
 }
 
 // in returns the session acting in workspace slug.
@@ -433,6 +434,9 @@ func (a *api) do(method, path string, body any, want int, out any) {
 	}
 	if a.ws != "" {
 		req.Header.Set(platform.WorkspaceHeader, a.ws)
+	}
+	if a.key != "" {
+		req.Header.Set("Authorization", "Bearer "+a.key)
 	}
 	resp, err := a.c.Do(req)
 	if err != nil {

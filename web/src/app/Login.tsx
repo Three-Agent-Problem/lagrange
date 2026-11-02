@@ -10,6 +10,12 @@ type Mode = 'login' | 'signup' | 'link' | 'forgot'
 /** An OAuth callback that went wrong comes back as /?authError=… */
 const authError = new URLSearchParams(location.search).get('authError') ?? ''
 
+/** After a GitHub/Google login, come back to the page that asked for it (e.g. /cli/authorize). */
+function nextQuery(): string {
+  const here = location.pathname + location.search
+  return location.pathname === '/' ? '' : `?next=${encodeURIComponent(here)}`
+}
+
 export function Login() {
   const { login, load } = useSession()
   const [auth, setAuth] = useState<AuthMethods>()
@@ -83,7 +89,7 @@ export function Login() {
 
   return (
     <AuthShell title={title} subtitle={subtitle}>
-      {(mode === 'login' || mode === 'signup') && <Providers auth={auth} />}
+      {(mode === 'login' || mode === 'signup') && <Providers auth={auth} query={nextQuery()} />}
       <form onSubmit={submit} className="space-y-4">
         {mode === 'signup' && (
           <>

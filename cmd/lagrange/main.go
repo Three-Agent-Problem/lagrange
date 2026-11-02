@@ -4,6 +4,9 @@
 //	lagrange tunnel --to URL             connect a local A2A agent to a server
 //	lagrange tunnel --acp "CMD"          connect a coding agent (Agent Client Protocol) to a server
 //	lagrange tunnel --echo               connect a built-in test agent that repeats what it is sent
+//	lagrange tunnel --address HANDLE     connect as an address, with a token minted through your login
+//	lagrange login                       log in through the browser and save an API key
+//	lagrange logout / whoami             forget the saved login / show who it is
 //	lagrange token --address HANDLE      mint an address token from the server's database
 //	lagrange migrate                     apply database migrations and exit
 //	lagrange healthcheck                 exit 0 if the local server is healthy (for Docker)
@@ -30,6 +33,7 @@ import (
 	"github.com/a2aproject/a2a-go/v2/a2asrv"
 	"github.com/a2aproject/a2a-go/v2/integrations/executor/a2aacp"
 
+	"github.com/three-agent-problem/lagrange/client"
 	"github.com/three-agent-problem/lagrange/directory"
 	"github.com/three-agent-problem/lagrange/notify"
 	"github.com/three-agent-problem/lagrange/pg"
@@ -43,6 +47,9 @@ const usage = `Usage: lagrange <command> [flags]
 Commands:
   serve     run the server
   tunnel    connect an agent to a server
+  login     log in through the browser and save an API key
+  logout    forget the saved login
+  whoami    show who the saved login is
   token     mint a token for an address (needs the database)
   migrate   apply database migrations and exit
   healthcheck  check the local server (for container health checks)
@@ -101,6 +108,12 @@ func main() {
 		err = serve(ctx, args)
 	case "tunnel":
 		err = runTunnel(ctx, args)
+	case "login":
+		err = login(ctx, args)
+	case "logout":
+		err = logout(args)
+	case "whoami":
+		err = whoami(ctx, args)
 	case "token":
 		err = token(ctx, args)
 	case "migrate":
@@ -198,8 +211,10 @@ func serve(ctx context.Context, args []string) error {
 
 func runTunnel(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("tunnel", flag.ExitOnError)
-	server := fs.String("server", env("LAGRANGE_SERVER", "http://localhost:8080"), "Lagrange server URL (env LAGRANGE_SERVER).")
-	tok := fs.String("token", os.Getenv("LAGRANGE_TOKEN"), "Address token (env LAGRANGE_TOKEN).")
+	af := addAPIFlags(fs)
+	tok := fs.String("token", os.Getenv("LAGRANGE_TOKEN"), "Address token (env LAGRANGE_TOKEN). Not needed with --address after lagrange login.")
+	address := fs.String("address", "", "Connect as this agent address, minting its token with your login (lagrange login).")
+	create := fs.Bool("create", false, "With --address: create the address if it doesn't exist.")
 	to := fs.String("to", "", "Base URL of the local A2A agent, e.g. http://localhost:9001.")
 	acp := fs.String("acp", "", `Coding agent command speaking ACP, e.g. "claude-agent-acp" or "opencode acp".`)
 	dir := fs.String("dir", ".", "Working directory of the --acp agent.")
@@ -209,8 +224,22 @@ func runTunnel(ctx context.Context, args []string) error {
 	expose := fs.Bool("expose", false, "Let the server forward raw HTTP for /t/<handle>/... (webhooks) to the agent.")
 	_ = fs.Parse(args)
 
+	cfg, err := loadConfig()
+	if err != nil {
+		return err
+	}
+	server, _ := af.resolve(cfg)
+	handle := strings.TrimPrefix(strings.TrimSpace(*address), "@")
+	saved := false // the token came from the saved login's cache
 	if *tok == "" {
-		return errors.New("tunnel: --token is required (create an address in the web app to get one)")
+		var minted bool
+		if handle == "" {
+			return errors.New("tunnel: --token or --address is required (lagrange login, then --address my-agent --create)")
+		}
+		if *tok, minted, err = addressToken(ctx, af, cfg, handle, *create); err != nil {
+			return err
+		}
+		saved = !minted
 	}
 	logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
 	var handler http.Handler
@@ -244,16 +273,71 @@ func runTunnel(ctx context.Context, args []string) error {
 	default:
 		return errors.New("tunnel: --to, --acp or --echo is required (--echo connects a built-in test agent)")
 	}
-	logger.Info("connecting", "server", *server, "capacity", *capacity)
-	err := tunnel.Run(ctx, tunnel.ClientConfig{
-		Server: *server, Token: *tok, Capacity: *capacity, Handler: handler, Expose: *expose,
-		UserAgent: "lagrange-tunnel", Logger: logger,
-		OnConnect: func() { logger.Info("tunnel connected: the agent is online") },
-	})
+	run := func(token string) error {
+		logger.Info("connecting", "server", server, "capacity", *capacity)
+		return tunnel.Run(ctx, tunnel.ClientConfig{
+			Server: server, Token: token, Capacity: *capacity, Handler: handler, Expose: *expose,
+			UserAgent: "lagrange-tunnel", Logger: logger,
+			OnConnect: func() { logger.Info("tunnel connected: the agent is online") },
+		})
+	}
+	err = run(*tok)
+	if errors.Is(err, tunnel.ErrUnauthorized) && saved {
+		// A saved token was revoked: mint a fresh one, once.
+		delete(cfg.Tokens, tokenKey(server, handle))
+		if *tok, _, err = addressToken(ctx, af, cfg, handle, false); err != nil {
+			return err
+		}
+		err = run(*tok)
+	}
 	if errors.Is(err, tunnel.ErrUnauthorized) {
 		return errors.New("tunnel: the server rejected the token")
 	}
 	return err
+}
+
+func tokenKey(server, handle string) string { return strings.TrimSuffix(server, "/") + " " + handle }
+
+// addressToken returns the saved tunnel token for handle, or mints one with the API key
+// (creating the address first with create) and saves it. minted is true for a new one.
+func addressToken(ctx context.Context, af apiFlags, cfg *cliConfig, handle string, create bool) (tok string, minted bool, err error) {
+	c, err := af.client(cfg)
+	if err != nil {
+		return "", false, fmt.Errorf("tunnel: %w", err)
+	}
+	k := tokenKey(c.Server, handle)
+	if t := cfg.Tokens[k]; t != "" {
+		return t, false, nil
+	}
+	host, _ := os.Hostname()
+	if create {
+		tok, err = c.CreateAgent(ctx, handle)
+		if client.StatusOf(err) == http.StatusConflict {
+			err, tok = nil, ""
+		}
+		if err != nil {
+			return "", false, fmt.Errorf("tunnel: creating @%s: %w", handle, err)
+		}
+	}
+	if tok == "" {
+		if tok, err = c.MintToken(ctx, handle, "lagrange tunnel on "+firstOf(host, "a computer")); err != nil {
+			if client.StatusOf(err) == http.StatusNotFound {
+				return "", false, fmt.Errorf("tunnel: no address @%s (add --create to make it)", handle)
+			}
+			return "", false, fmt.Errorf("tunnel: minting a token for @%s: %w", handle, err)
+		}
+	}
+	// Save it only when the key came from the saved login, so CI keys don't write files.
+	if sameServer(c.Server, cfg.Server) && c.Key == cfg.Key {
+		if cfg.Tokens == nil {
+			cfg.Tokens = map[string]string{}
+		}
+		cfg.Tokens[k] = tok
+		if err := cfg.save(); err != nil {
+			return "", false, err
+		}
+	}
+	return tok, true, nil
 }
 
 // acpHandler serves a coding agent as an A2A agent, for the tunnel. Its permission

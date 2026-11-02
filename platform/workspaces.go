@@ -62,9 +62,10 @@ func visibleSQL(n int) string {
 
 type scopedHandler func(w http.ResponseWriter, r *http.Request, me *directory.User, s *scope)
 
-// in requires a verified session and at least role in the request's workspace.
+// in requires a verified session (or an API key) and at least role in the request's
+// workspace.
 func (p *Platform) in(role string, h scopedHandler) http.Handler {
-	return p.authed(func(w http.ResponseWriter, r *http.Request, me *directory.User) {
+	return p.session(func(w http.ResponseWriter, r *http.Request, me *directory.User) {
 		s, status, err := p.scopeOf(r, me)
 		if err != nil {
 			apiError(w, status, err.Error())
@@ -75,7 +76,7 @@ func (p *Platform) in(role string, h scopedHandler) http.Handler {
 			return
 		}
 		h(w, r, me, s)
-	})
+	}, true, true)
 }
 
 var errNoWorkspace = errors.New("you aren't in any workspace: create one or ask for an invitation")
@@ -85,6 +86,27 @@ func (p *Platform) scopeOf(r *http.Request, me *directory.User) (*scope, int, er
 	slug := r.Header.Get(WorkspaceHeader)
 	if slug == "" {
 		slug = r.URL.Query().Get("workspace")
+	}
+	if g := keyGrantOf(ctx); g != nil {
+		// A key acts in its own workspace only, with the lower of its role and the
+		// person's current one.
+		if slug != "" && slug != g.Workspace {
+			return nil, http.StatusForbidden, errors.New("this API key is for workspace " + g.Workspace)
+		}
+		ws, err := p.Directory.Membership(ctx, me.ID, g.Workspace)
+		if errors.Is(err, directory.ErrNotMember) {
+			return nil, http.StatusForbidden, errors.New("you aren't a member of " + g.Workspace + " any more")
+		} else if err != nil {
+			return nil, http.StatusInternalServerError, err
+		}
+		if !directory.RoleAtLeast(g.Role, ws.Role) {
+			ws.Role = g.Role
+		}
+		s, err := p.scopeFor(ctx, ws)
+		if err != nil {
+			return nil, http.StatusInternalServerError, err
+		}
+		return s, 0, nil
 	}
 	var ws *directory.Workspace
 	if slug != "" {

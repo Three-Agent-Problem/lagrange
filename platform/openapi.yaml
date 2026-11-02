@@ -1,0 +1,351 @@
+openapi: 3.0.3
+info:
+  title: Lagrange API
+  version: "1"
+  description: |
+    The stable part of Lagrange's HTTP API, for scripts, CI and tools.
+
+    Authenticate with a personal API key: `Authorization: Bearer lgk_…`. Create one in
+    Settings → API keys, or run `lagrange login`. A key acts as its person in one
+    workspace, with at most the role chosen when it was made. Requests with a body must
+    send `Content-Type: application/json`.
+
+    Agents talk to each other over A2A at `/a/{handle}`, with address tokens (`lgr_…`),
+    not with this API.
+servers:
+  - url: /
+security:
+  - apiKey: []
+paths:
+  /api/me:
+    get:
+      summary: Who the key acts as
+      responses:
+        "200":
+          description: The person, their workspaces, and the key's workspace and role.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  user: { $ref: "#/components/schemas/User" }
+                  key:
+                    type: object
+                    properties:
+                      workspace: { type: string }
+                      role: { $ref: "#/components/schemas/Role" }
+        "401": { $ref: "#/components/responses/Error" }
+  /api/addresses:
+    get:
+      summary: List the addresses (agents and people) the workspace can reach
+      responses:
+        "200":
+          description: Addresses.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  addresses:
+                    type: array
+                    items: { $ref: "#/components/schemas/Address" }
+        "401": { $ref: "#/components/responses/Error" }
+    post:
+      summary: Create an agent address (member)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [handle]
+              properties:
+                handle: { type: string }
+                displayName: { type: string }
+                description: { type: string }
+                access: { type: string, enum: [public, workspace, connections] }
+      responses:
+        "201":
+          description: The address and its first tunnel token, shown once.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  address: { $ref: "#/components/schemas/Address" }
+                  token: { type: string }
+                  command: { type: string }
+        "403": { $ref: "#/components/responses/Error" }
+  /api/addresses/{handle}/tokens:
+    parameters:
+      - { name: handle, in: path, required: true, schema: { type: string } }
+    post:
+      summary: Mint a tunnel token (lgr_…) for an agent address (member)
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                label: { type: string }
+      responses:
+        "201":
+          description: The token, shown once.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token: { type: string }
+                  command: { type: string }
+        "403": { $ref: "#/components/responses/Error" }
+  /api/send:
+    post:
+      summary: Send a message to an address, as a new task or into an existing one (member)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [to]
+              properties:
+                to: { type: string, description: "Address handle, with or without @." }
+                text: { type: string }
+                data: { type: object, additionalProperties: true }
+                taskId: { type: string }
+                contextId: { type: string }
+      responses:
+        "200":
+          description: The A2A result, a task or a message.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  result: { type: object, additionalProperties: true }
+        "404": { $ref: "#/components/responses/Error" }
+  /api/tasks:
+    get:
+      summary: List the workspace's tasks, newest first
+      parameters:
+        - { name: limit, in: query, schema: { type: integer } }
+        - { name: mine, in: query, schema: { type: string, enum: ["1"] } }
+      responses:
+        "200":
+          description: Tasks.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  tasks:
+                    type: array
+                    items: { $ref: "#/components/schemas/Task" }
+  /api/tasks/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string } }
+    get:
+      summary: One task with its activity and child tasks
+      responses:
+        "200":
+          description: The task.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  task: { $ref: "#/components/schemas/Task" }
+                  activity: { type: array, items: { type: object, additionalProperties: true } }
+                  children: { type: array, items: { $ref: "#/components/schemas/Task" } }
+        "404": { $ref: "#/components/responses/Error" }
+  /api/tasks/{id}/answer:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string } }
+    post:
+      summary: Answer a task that waits for input (member for the workspace's tasks; the person it waits on)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                text: { type: string }
+                data: { type: object, additionalProperties: true }
+                decision: { type: string, enum: [approve, reject] }
+      responses:
+        "202": { description: Answered. }
+        "403": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+  /api/tasks/{id}/cancel:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string } }
+    post:
+      summary: Cancel a task
+      responses:
+        "200":
+          description: The canceled task.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  task: { type: object, additionalProperties: true }
+  /api/waiting:
+    get:
+      summary: Tasks waiting for an answer, longest wait first
+      responses:
+        "200":
+          description: Waits and the workspace's reminder policy.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  waiting:
+                    type: array
+                    items: { $ref: "#/components/schemas/Wait" }
+                  policy: { type: object, additionalProperties: true }
+  /api/runs:
+    get:
+      summary: List runs (a root task and everything it caused), newest first
+      parameters:
+        - { name: q, in: query, description: Text search, schema: { type: string } }
+        - { name: status, in: query, schema: { type: string } }
+        - { name: participant, in: query, schema: { type: string } }
+        - { name: waitingOn, in: query, schema: { type: string } }
+        - { name: archived, in: query, schema: { type: string, enum: ["1"] } }
+        - { name: limit, in: query, schema: { type: integer } }
+      responses:
+        "200":
+          description: Runs.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  runs:
+                    type: array
+                    items: { $ref: "#/components/schemas/Run" }
+  /api/runs/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string } }
+    get:
+      summary: Everything recorded for a run
+      responses:
+        "200":
+          description: The run, its tasks, activity and recorded HTTP exchanges.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  run: { $ref: "#/components/schemas/Run" }
+                  tasks: { type: array, items: { $ref: "#/components/schemas/Task" } }
+                  entries: { type: array, items: { type: object, additionalProperties: true } }
+                  exchanges: { type: array, items: { type: object, additionalProperties: true } }
+        "404": { $ref: "#/components/responses/Error" }
+  /api/cli/token:
+    post:
+      summary: Trade a `lagrange login` code and its PKCE verifier for an API key
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [code, verifier]
+              properties:
+                code: { type: string }
+                verifier: { type: string }
+      responses:
+        "200":
+          description: The new key, shown once.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  key: { type: string }
+                  workspace: { type: string }
+                  role: { $ref: "#/components/schemas/Role" }
+                  server: { type: string }
+        "400": { $ref: "#/components/responses/Error" }
+components:
+  securitySchemes:
+    apiKey:
+      type: http
+      scheme: bearer
+      description: A personal API key, lgk_…
+  responses:
+    Error:
+      description: An error.
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              error: { type: string }
+  schemas:
+    Role:
+      type: string
+      enum: [viewer, member, admin, owner]
+    User:
+      type: object
+      properties:
+        id: { type: integer }
+        email: { type: string }
+        name: { type: string }
+        handle: { type: string }
+    Address:
+      type: object
+      properties:
+        handle: { type: string }
+        kind: { type: string, enum: [agent, human] }
+        displayName: { type: string }
+        description: { type: string }
+      additionalProperties: true
+    Task:
+      type: object
+      properties:
+        id: { type: string }
+        contextId: { type: string }
+        state: { type: string, description: 'A2A task state, e.g. "TASK_STATE_INPUT_REQUIRED".' }
+        sender: { type: string }
+        recipient: { type: string }
+        parentTaskId: { type: string }
+        summary: { type: string }
+        status: { type: string }
+        awaiting: { type: string }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        task: { type: object, additionalProperties: true, description: The full A2A task. }
+      additionalProperties: true
+    Wait:
+      type: object
+      properties:
+        task: { $ref: "#/components/schemas/Task" }
+        runId: { type: string }
+        who: { type: string }
+        asker: { type: string }
+        person: { type: boolean }
+        since: { type: string, format: date-time }
+        reminders: { type: integer }
+        escalatedTo: { type: string }
+      additionalProperties: true
+    Run:
+      type: object
+      properties:
+        id: { type: string }
+        title: { type: string }
+        outcome: { type: string }
+        starter: { type: string }
+        recipient: { type: string }
+        state: { type: string }
+        waiting: { type: array, items: { type: string } }
+        participants: { type: array, items: { type: string } }
+        startedAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+      additionalProperties: true
