@@ -147,11 +147,8 @@ func wrapHandler(card *a2a.AgentCard, fn wrapFunc) http.Handler {
 			if !yield(art, nil) {
 				return
 			}
-			var reply *a2a.Message
-			if r.Text != "" {
-				reply = a2a.NewMessageForTask(a2a.MessageRoleAgent, ec, a2a.NewTextPart(r.Text))
-			}
-			yield(a2a.NewStatusUpdateEvent(ec, a2a.TaskStateCompleted, reply), nil)
+			// The answer is the artifact; repeating it in the status would show it twice.
+			yield(a2a.NewStatusUpdateEvent(ec, a2a.TaskStateCompleted, nil), nil)
 		}
 	})
 	mux := http.NewServeMux()

@@ -18,6 +18,7 @@ import (
 	"github.com/a2aproject/a2a-go/v2/a2a"
 	"github.com/a2aproject/a2a-go/v2/a2aext/structuredinput"
 	"github.com/a2aproject/a2a-go/v2/a2asrv"
+	"github.com/google/jsonschema-go/jsonschema"
 
 	"github.com/three-agent-problem/registry/lint"
 
@@ -648,7 +649,12 @@ func (p *Platform) answer(ctx context.Context, me *directory.User, s *scope, id 
 	}
 
 	var msg *a2a.Message
-	if req, err := structuredinput.ParseRequest(task.Status.Message); err == nil && req != nil && body.Data != nil {
+	req, err := structuredinput.ParseRequest(task.Status.Message)
+	if err == nil && req != nil && body.Data == nil {
+		// --approve from the CLI, MCP or the API: fill in an approval form's one boolean.
+		body.Data = decisionData(req.Schema, body.Decision)
+	}
+	if err == nil && req != nil && body.Data != nil {
 		var extra []*a2a.Part
 		if t := strings.TrimSpace(body.Text); t != "" {
 			extra = append(extra, a2a.NewTextPart(t))
@@ -670,6 +676,20 @@ func (p *Platform) answer(ctx context.Context, me *directory.User, s *scope, id 
 		return statusOf(err), err
 	}
 	return 0, nil
+}
+
+// decisionData is the answer an approve or reject decision gives to a form whose only
+// field is a boolean ({"approved": true}), or nil when the form asks for more.
+func decisionData(schema *jsonschema.Schema, decision string) map[string]any {
+	if schema == nil || (decision != "approve" && decision != "reject") || len(schema.Properties) != 1 {
+		return nil
+	}
+	for name, prop := range schema.Properties {
+		if prop != nil && prop.Type == "boolean" {
+			return map[string]any{name: decision == "approve"}
+		}
+	}
+	return nil
 }
 
 const linkGone = "This link was already used or has expired. Open your inbox to see the task."

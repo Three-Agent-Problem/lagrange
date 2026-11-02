@@ -124,7 +124,7 @@ func TestHTTPWrapper(t *testing.T) {
 		t.Fatalf("ask: %s %+v", task.Status.State, task.Status.Message)
 	}
 	task = sendMsg(t, c, a2a.NewMessageForTask(a2a.MessageRoleUser, task, a2a.NewTextPart("L")))
-	if task.Status.State != a2a.TaskStateCompleted || task.Status.Message.Parts[0].Text() != "thanks, L" {
+	if task.Status.State != a2a.TaskStateCompleted || task.Artifacts[len(task.Artifacts)-1].Parts[0].Text() != "thanks, L" {
 		t.Fatalf("answer: %s %+v", task.Status.State, task.Status.Message)
 	}
 	last := got[len(got)-1]
