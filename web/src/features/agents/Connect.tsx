@@ -12,10 +12,15 @@ import { Button } from '@/ui/AnswerForm'
 import { CodeLine } from '@/ui/Copy'
 
 
-const MODES: { id: Mode; label: string; hint: string }[] = [
+const SCENARIOS = 'https://github.com/three-agent-problem/examples/tree/main'
+
+/** Where people's agents live, and how each one connects. */
+const MODES: { id: Mode; label: string; hint: string; docs?: string }[] = [
   { id: 'echo', label: 'Try it now', hint: 'A test agent built into lagrange that repeats what you send. No code needed.' },
-  { id: 'to', label: 'Your A2A agent', hint: 'Any A2A agent, in any language, listening on a local port.' },
-  { id: 'acp', label: 'Coding agent', hint: 'Claude Code, Gemini CLI, opencode or Codex over ACP. Its “may I run this?” prompts land in your inbox.' },
+  { id: 'to', label: 'A2A agent', hint: 'Any A2A agent listening on a local port: a2a-sdk (Python, TypeScript, Go, Java, .NET), Google ADK, LangGraph, CrewAI, OpenClaw’s A2A plugin.', docs: `${SCENARIOS}/quickstart` },
+  { id: 'acp', label: 'Coding agent', hint: 'Claude Code, Gemini CLI, opencode or Codex over ACP. Its “may I run this?” prompts land in your inbox.', docs: `${SCENARIOS}/scenarios/claude-code-teammate` },
+  { id: 'exec', label: 'Script or CLI', hint: 'Any program: the message text on stdin, the answer on stdout (text or JSON). Wrap a script, or a headless agent such as claude -p or ollama run.', docs: `${SCENARIOS}/scenarios/script-agent` },
+  { id: 'http', label: 'n8n, Zapier, Make', hint: 'Any webhook: each message is POSTed as JSON and the response is the answer. Reply {"ask": …} to ask the sender a question.', docs: `${SCENARIOS}/scenarios/n8n-workflow` },
 ]
 
 /**
@@ -27,6 +32,7 @@ export function Connect({ handle, token, onClose }: { handle: string; token: str
   const presence = useView().presence[handle]
   const address = addresses.find((a) => a.handle === handle)
   const [mode, setMode] = useState<Mode>('echo')
+  const current = MODES.find((m) => m.id === mode)!
   const [answered, setAnswered] = useState(false)
   const connected = !!address?.endpoint || (presence?.sessions ?? address?.stats.sessions ?? 0) > 0
   const workers = presence?.sessions ?? address?.stats.sessions ?? 0
@@ -48,7 +54,7 @@ export function Connect({ handle, token, onClose }: { handle: string; token: str
         </p>
       </div>
 
-      <Step n={1} done={connected} title="Run the tunnel next to your agent">
+      <Step n={1} done={connected} title="Where does your agent live? Run the tunnel next to it">
         <div className="flex flex-wrap gap-1">
           {MODES.map((m) => (
             <button key={m.id} className={cn('rounded-full px-2.5 py-1 text-xs font-bold', mode === m.id ? 'bg-accent text-accent-ink' : 'bg-surface-2 text-muted hover:text-ink')} onClick={() => setMode(m.id)}>
@@ -56,7 +62,17 @@ export function Connect({ handle, token, onClose }: { handle: string; token: str
             </button>
           ))}
         </div>
-        <p className="text-xs text-muted">{MODES.find((m) => m.id === mode)!.hint}</p>
+        <p className="text-xs text-muted">
+          {current.hint}
+          {current.docs && (
+            <>
+              {' '}
+              <a className="inline-flex items-center gap-0.5 font-bold text-accent hover:underline" href={current.docs} target="_blank" rel="noreferrer">
+                How it works <ExternalLink size={11} />
+              </a>
+            </>
+          )}
+        </p>
         <CodeLine text={tunnelCommand(publicUrl, token, mode)} />
         <p className="text-[11px] text-muted">
           The token is in the command and is shown only now; copy it before you close this. No <code className="font-mono">lagrange</code> yet?{' '}

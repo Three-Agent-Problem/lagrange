@@ -8,3 +8,10 @@ describe('tunnelCommand', () => {
     expect(tunnelCommand('https://l.example.com', 'lgr_abc', 'acp')).toContain('--acp claude-agent-acp')
   })
 })
+
+describe('tunnelCommand for agents that do not speak A2A', () => {
+  it('wraps a script and a webhook', () => {
+    expect(tunnelCommand('https://l.example.com', 'lgr_abc', 'exec')).toContain('--token lgr_abc --exec "python agent.py"')
+    expect(tunnelCommand('https://l.example.com', 'lgr_abc', 'http')).toContain('--http https://n8n.example.com/webhook/my-agent')
+  })
+})
