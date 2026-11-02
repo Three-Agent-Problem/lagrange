@@ -13,6 +13,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/a2aproject/a2a-go/v2/a2a"
+
 	"github.com/three-agent-problem/lagrange/client"
 	"github.com/three-agent-problem/lagrange/directory"
 	"github.com/three-agent-problem/lagrange/tunnel"
@@ -104,11 +106,12 @@ func TestCLIVerbs(t *testing.T) {
 
 	// A person approves while the sender waits.
 	hoodies := tr.run("ada", ada, "send", "@bob", "Approve 200 hoodies for 2,800 EUR?")
+	untilState(t, server, ada, hoodies, client.Waiting)
 	tr.run("bob", bob, "waiting", "--mine")
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		time.Sleep(300 * time.Millisecond)
+		time.Sleep(time.Second) // after task --wait has seen it waiting
 		if err := client.New(server, bob).Answer(ctx, hoodies, &client.Answer{Text: "Go ahead.", Decision: "approve"}); err != nil {
 			t.Error(err)
 		}
@@ -118,14 +121,13 @@ func TestCLIVerbs(t *testing.T) {
 
 	// A rejection fails the wait.
 	ship := tr.run("ada", ada, "send", "@bob", "Ship the release?")
+	untilState(t, server, ada, ship, client.Waiting)
 	tr.run("bob", bob, "answer", ship, "--reject", "Not on a Friday.")
-	if _, ok, err := client.New(server, ada).Follow(ctx, ship, 10*time.Second, 20*time.Millisecond, func(t *client.Task) bool { return t.Task.Status.State.Terminal() }); err != nil || !ok {
-		t.Fatalf("the rejection didn't land: %v", err)
-	}
+	untilState(t, server, ada, ship, a2a.TaskState.Terminal)
 	tr.run("ada", ada, "task", ship, "--wait")
 
 	// Timing out leaves the task waiting.
-	tr.run("ada", ada, "send", "@bob", "Lunch?", "--wait", "--timeout", "200ms")
+	tr.run("ada", ada, "send", "@bob", "Lunch?", "--wait", "--timeout", "1s")
 
 	// A task that asks you ends the wait.
 	tr.run("ada", ada, "send", "@ada", "Remember the milk", "--wait")
@@ -157,6 +159,16 @@ func TestCLIVerbs(t *testing.T) {
 	}
 	if got := tr.out.String(); got != string(want) {
 		t.Errorf("the output changed (run with -update if that's intended):\n%s", got)
+	}
+}
+
+// untilState waits until a task's state satisfies ok, so the transcript doesn't depend on
+// timing.
+func untilState(t *testing.T, server, key, id string, ok func(a2a.TaskState) bool) {
+	t.Helper()
+	_, done, err := client.New(server, key).Follow(t.Context(), id, 15*time.Second, 20*time.Millisecond, func(tk *client.Task) bool { return ok(tk.Task.Status.State) })
+	if err != nil || !done {
+		t.Fatalf("task %s didn't get there: %v", id, err)
 	}
 }
 

@@ -171,7 +171,7 @@ func send(ctx context.Context, args []string) error {
 			return printJSON(client.ResultOf(res.Task))
 		}
 		fmt.Fprintln(stdout, id)
-		fmt.Fprintf(stderr, "Sent to @%s (%s). Check on it with: lagrange task %s --wait\n", to, client.ShortState(string(res.Task.Status.State)), id)
+		fmt.Fprintf(stderr, "Sent to @%s. Check on it with: lagrange task %s --wait\n", to, id)
 		return nil
 	}
 	return waitTask(ctx, c, id, *timeout, *asJSON)

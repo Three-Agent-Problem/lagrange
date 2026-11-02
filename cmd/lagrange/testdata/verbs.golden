@@ -6,7 +6,7 @@ hello from CI
 
 $ ada: lagrange send @bob Approve 200 hoodies for 2,800 EUR?
 <id2>
-! Sent to @bob (input-required). Check on it with: lagrange task <id2> --wait
+! Sent to @bob. Check on it with: lagrange task <id2> --wait
 [exit 0]
 
 $ bob: lagrange waiting --mine
@@ -22,7 +22,7 @@ Go ahead.
 
 $ ada: lagrange send @bob Ship the release?
 <id3>
-! Sent to @bob (input-required). Check on it with: lagrange task <id3> --wait
+! Sent to @bob. Check on it with: lagrange task <id3> --wait
 [exit 0]
 
 $ bob: lagrange answer <id3> --reject Not on a Friday.
@@ -35,7 +35,7 @@ Not on a Friday.
 ! lagrange: the task was rejected
 [exit 3]
 
-$ ada: lagrange send @bob Lunch? --wait --timeout 200ms
+$ ada: lagrange send @bob Lunch? --wait --timeout 1s
 ! Waiting on @bob…
 ! input-required, waiting on @bob (task <id4>)
 ! lagrange: still input-required; the task goes on. Wait again with: lagrange task <id4> --wait
