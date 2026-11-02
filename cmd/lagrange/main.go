@@ -248,7 +248,13 @@ func runTunnel(ctx context.Context, args []string) error {
 	acp := fs.String("acp", "", `Coding agent command speaking ACP, e.g. "claude-agent-acp" or "opencode acp".`)
 	dir := fs.String("dir", ".", "Working directory of the --acp agent.")
 	echo := fs.Bool("echo", false, "Serve a built-in test agent that answers with what it was sent.")
-	name := fs.String("name", "", "Agent name on its card (--acp and --echo).")
+	execCmd := fs.String("exec", "", `Run this command for each message: the text on stdin, the reply (text or JSON) on stdout.`)
+	httpURL := fs.String("http", "", "POST each message as JSON to this URL (an n8n, Zapier or Make webhook, any HTTP endpoint) and reply with its response.")
+	headers := headerFlag{}
+	fs.Var(headers, "header", `With --http: a header to send, "Name: value" (repeatable).`)
+	timeout := fs.Duration("timeout", 5*time.Minute, "With --exec or --http: how long one message may take.")
+	name := fs.String("name", "", "Agent name on its card (--acp, --echo, --exec, --http).")
+	description := fs.String("description", "", "With --exec or --http: what the agent does, for its card and public page.")
 	capacity := fs.Int("capacity", tunnel.DefaultCapacity, "Tasks this copy runs at once.")
 	expose := fs.Bool("expose", false, "Let the server forward raw HTTP for /t/<handle>/... (webhooks) to the agent.")
 	_ = fs.Parse(args)
@@ -273,16 +279,26 @@ func runTunnel(ctx context.Context, args []string) error {
 	logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
 	var handler http.Handler
 	modes := 0
-	for _, on := range []bool{*to != "", *acp != "", *echo} {
+	for _, on := range []bool{*to != "", *acp != "", *echo, *execCmd != "", *httpURL != ""} {
 		if on {
 			modes++
 		}
 	}
 	switch {
 	case modes > 1:
-		return errors.New("tunnel: use one of --to, --acp and --echo")
+		return errors.New("tunnel: use one of --to, --acp, --exec, --http and --echo")
 	case *echo:
 		handler = echoHandler(*name)
+	case *execCmd != "":
+		desc := firstOf(*description, "A command-line program connected through a Lagrange tunnel.")
+		handler = wrapHandler(wrapCard(firstOf(*name, strings.Fields(*execCmd)[0]), desc, ""), execFunc(*execCmd, *timeout))
+	case *httpURL != "":
+		target, err := url.Parse(*httpURL)
+		if err != nil || target.Host == "" || (target.Scheme != "http" && target.Scheme != "https") {
+			return fmt.Errorf("tunnel: invalid --http URL %q", *httpURL)
+		}
+		desc := firstOf(*description, "A workflow connected through a Lagrange tunnel.")
+		handler = wrapHandler(wrapCard(firstOf(*name, "Workflow"), desc, ""), httpFunc(*httpURL, http.Header(headers), *timeout))
 	case *to != "":
 		target, err := url.Parse(*to)
 		if err != nil || target.Host == "" {
@@ -300,7 +316,7 @@ func runTunnel(ctx context.Context, args []string) error {
 		defer closeFn()
 		handler = h
 	default:
-		return errors.New("tunnel: --to, --acp or --echo is required (--echo connects a built-in test agent)")
+		return errors.New("tunnel: one of --to, --acp, --exec, --http or --echo is required (--echo connects a built-in test agent)")
 	}
 	run := func(token string) error {
 		logger.Info("connecting", "server", server, "capacity", *capacity)

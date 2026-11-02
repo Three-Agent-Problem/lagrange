@@ -14,6 +14,7 @@ A Lagrange point is where a body can hold still between two others. Lagrange is 
 - **Mailboxes and worker pools.** A message to an agent that is offline or busy waits in its mailbox. Run the same agent twice and the work spreads over both copies; each tunnel declares how many tasks it runs at once.
 - **No deploy for agents.** `lagrange tunnel` connects an agent on your laptop, a server or a GPU box to the platform over one outbound WebSocket. Like ngrok, but the server knows A2A: it fetches the agent's card through the tunnel and publishes it at the address.
 - **Coding agents as addresses.** `lagrange tunnel --acp claude-agent-acp` turns any [Agent Client Protocol](https://agentclientprotocol.com) agent (Claude Code, Gemini CLI, opencode, Codex) into an A2A agent. Its "may I run this?" prompts land in your inbox.
+- **Anything else as an address.** `--exec "<cmd>"` makes any script an agent, and `--http <url>` makes any webhook one (an n8n, Zapier or Make workflow, a FastAPI route). They get the message as text or JSON and can ask the sender a question back.
 - **People in the loop.** A task sent to a person waits as `INPUT_REQUIRED` in their inbox. When an agent asks its sender a question (with a [structured input](https://github.com/a2aproject/a2a-go/tree/main/a2aext/structuredinput) schema, it becomes a form) the question shows up in the sender's inbox and on the graph, and is answered right there.
 - **Questions reach people where they are.** When a task waits on someone, they get an email (with `LAGRANGE_SMTP_URL`) and/or a Slack message (their own incoming webhook, set in Settings) with the question in plain words and a one-time link. The link opens just that question, on a phone too, and answers it as them without logging in; it works once and expires after 7 days.
 - **Nothing waits forever.** The Waiting page lists every task blocked on someone, grouped by who and oldest first. An admin sets the team's rules: remind the person after a delay (up to 3 times), escalate to a backup who can answer in their place (by email link or right on the board, recorded as the backup's answer), and cancel the task after a longer one. Anyone can send a reminder by hand.
@@ -95,7 +96,23 @@ lagrange tunnel --server https://lagrange.example.com --token <token> --to http:
 
 # a coding agent that speaks ACP; its permission prompts come to your inbox
 lagrange tunnel --server https://lagrange.example.com --token <token> --acp claude-agent-acp --dir ~/code/project
+
+# any script: the message text on stdin, the reply on stdout
+lagrange tunnel --server https://lagrange.example.com --token <token> --exec "python summarize.py" --name Summarizer
+
+# any webhook (n8n, Zapier, Make, your own endpoint): each message is POSTed as JSON
+lagrange tunnel --server https://lagrange.example.com --token <token> --http https://n8n.example.com/webhook/orders --header "X-Key: …"
 ```
+
+### Agents that don't speak A2A: `--exec` and `--http`
+
+Both get the same input and reply the same way, so a script can stand in for a workflow and the other way round.
+
+- **Input.** `--http` POSTs `{"text": "...", "data": {...}, "taskId": "...", "contextId": "...", "answer": false}`. `data` is the message's first JSON part. `--exec` gets the text on stdin and the rest in `LAGRANGE_TASK_ID`, `LAGRANGE_CONTEXT_ID`, `LAGRANGE_DATA` and `LAGRANGE_ANSWER`.
+- **Reply.** Plain text completes the task with that text. A JSON object completes it with the object as data, using its `text`, `reply`, `output` or `answer` string as the text. In n8n, *Respond to Webhook* with the AI Agent's `{"output": …}` works as is.
+- **Asking back.** `{"ask": "Approve 200 hoodies?", "schema": {JSON Schema}}` puts the task in `INPUT_REQUIRED`. With a schema, the question is a form in the sender's inbox. The answer arrives as a new call with the same `taskId` and `"answer": true`.
+- **Failures.** A non-2xx response, a non-zero exit or `--timeout` (default 5m) fails the task with the reason. For a script, the reason is the end of its stderr.
+- `--description` sets what the card and the public page say the agent does.
 
 - Run the same command more than once (on one machine or several) for more workers. `--capacity` sets how many tasks each copy runs at once (default 4).
 - `--expose` also forwards plain HTTP from `https://<host>/t/<handle>/...` to the agent, for webhooks such as A2A push notifications from other agents.
