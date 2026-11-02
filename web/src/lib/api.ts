@@ -390,12 +390,12 @@ export const api = {
   archiveRun: (id: string, archived: boolean) => call<void>(archived ? 'POST' : 'DELETE', `/api/runs/${encodeURIComponent(id)}/archive`, {}),
 }
 
-/** The text parts of a message or artifact, joined. */
+/** The text parts of a message or artifact, joined as they are: a streamed answer arrives as one part per chunk. */
 export function textOf(parts: Part[] | undefined): string {
   return (parts ?? [])
     .map((p) => p.text ?? '')
     .filter(Boolean)
-    .join(' ')
+    .join('')
 }
 
 /** The first data part, for rendering structured payloads. */

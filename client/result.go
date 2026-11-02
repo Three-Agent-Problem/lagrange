@@ -68,16 +68,22 @@ func (t *Task) Result() *Result {
 func ResultOf(t *a2a.Task) *Result {
 	r := &Result{TaskID: string(t.ID), ContextID: t.ContextID, State: ShortState(string(t.Status.State)), Done: t.Status.State.Terminal()}
 	var texts []string
+	// add takes one message's or artifact's parts. Its text parts are joined as they
+	// are: a streamed answer (an ACP agent's, say) arrives as one part per chunk.
 	add := func(parts []*a2a.Part) {
+		var b strings.Builder
 		for _, p := range parts {
 			if p == nil {
 				continue
 			}
 			if tx := p.Text(); tx != "" {
-				texts = append(texts, tx)
+				b.WriteString(tx)
 			} else if d := p.Data(); d != nil {
 				r.Data = append(r.Data, d)
 			}
+		}
+		if b.Len() > 0 {
+			texts = append(texts, b.String())
 		}
 	}
 	if m := t.Status.Message; m != nil {
