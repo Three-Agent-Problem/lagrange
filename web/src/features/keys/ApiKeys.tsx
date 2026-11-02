@@ -54,7 +54,7 @@ export function ApiKeys() {
         <h2 className="font-bold">API keys</h2>
       </div>
       <p className="text-xs text-muted">
-        A key acts as you in one workspace, with at most the role you pick, for scripts, CI and MCP clients. Send it as{' '}
+        A key acts as you in one workspace, with at most the role you pick, for scripts, CI and MCP clients. Viewer keys are read-only. Send it as{' '}
         <code className="font-mono">Authorization: Bearer lgk_…</code>. The API is described at{' '}
         <a className="font-semibold text-accent hover:underline" href="/api/openapi.yaml">/api/openapi.yaml</a>.
       </p>

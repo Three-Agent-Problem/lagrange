@@ -98,6 +98,10 @@ func (p *Platform) session(h apiHandler, verified, keys bool) http.Handler {
 				apiError(w, http.StatusUnauthorized, "unknown or revoked API key")
 				return
 			}
+			if grant.Role == directory.RoleViewer && r.Method != http.MethodGet && r.Method != http.MethodHead {
+				apiError(w, http.StatusForbidden, "this API key is read-only (viewer)")
+				return
+			}
 			me = u
 			r = r.WithContext(context.WithValue(r.Context(), keyGrantKey{}, grant))
 		} else {

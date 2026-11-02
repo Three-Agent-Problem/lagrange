@@ -13,6 +13,8 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"github.com/a2aproject/a2a-go/v2/a2a"
 )
 
 // Client calls one server as one key.
@@ -148,4 +150,175 @@ type Login struct {
 	Workspace string `json:"workspace"`
 	Role      string `json:"role"`
 	Server    string `json:"server"`
+}
+
+// Address is an agent or a person.
+type Address struct {
+	Handle      string          `json:"handle"`
+	Kind        string          `json:"kind"`
+	DisplayName string          `json:"displayName"`
+	Description string          `json:"description"`
+	Online      bool            `json:"online"`
+	Card        json.RawMessage `json:"card,omitempty"`
+}
+
+// Addresses lists the addresses the workspace can reach.
+func (c *Client) Addresses(ctx context.Context) ([]*Address, error) {
+	var out struct{ Addresses []*Address }
+	err := c.Do(ctx, http.MethodGet, "/api/addresses", nil, &out)
+	return out.Addresses, err
+}
+
+// Task is a task as the API shows it, with the full A2A task.
+type Task struct {
+	ID           string    `json:"id"`
+	ContextID    string    `json:"contextId"`
+	State        string    `json:"state"`
+	Sender       string    `json:"sender"`
+	Recipient    string    `json:"recipient"`
+	ParentTaskID string    `json:"parentTaskId,omitempty"`
+	Summary      string    `json:"summary"`
+	Status       string    `json:"status,omitempty"`
+	Awaiting     string    `json:"awaiting,omitempty"`
+	CreatedAt    time.Time `json:"createdAt"`
+	UpdatedAt    time.Time `json:"updatedAt"`
+	Task         *a2a.Task `json:"task,omitempty"`
+}
+
+// Task returns one task.
+func (c *Client) Task(ctx context.Context, id string) (*Task, error) {
+	var out struct{ Task *Task }
+	if err := c.Do(ctx, http.MethodGet, "/api/tasks/"+url.PathEscape(id), nil, &out); err != nil {
+		return nil, err
+	}
+	if out.Task == nil {
+		return nil, &Error{Status: http.StatusNotFound, Message: "no such task"}
+	}
+	return out.Task, nil
+}
+
+// Send is a message to an address.
+type Send struct {
+	To        string         `json:"to"`
+	Text      string         `json:"text,omitempty"`
+	Data      map[string]any `json:"data,omitempty"`
+	TaskID    string         `json:"taskId,omitempty"`
+	ContextID string         `json:"contextId,omitempty"`
+}
+
+// SendResult is what an address answered: a task to follow, or a plain message.
+type SendResult struct {
+	Task    *a2a.Task
+	Message *a2a.Message
+}
+
+// Send sends a message and returns the task it started (or continued), or the
+// address's direct answer.
+func (c *Client) Send(ctx context.Context, m *Send) (*SendResult, error) {
+	var out struct{ Result json.RawMessage }
+	if err := c.Do(ctx, http.MethodPost, "/api/send", m, &out); err != nil {
+		return nil, err
+	}
+	var probe struct {
+		Status    *json.RawMessage `json:"status"`
+		MessageID string           `json:"messageId"`
+	}
+	_ = json.Unmarshal(out.Result, &probe)
+	if probe.Status != nil {
+		var t a2a.Task
+		if err := json.Unmarshal(out.Result, &t); err != nil {
+			return nil, err
+		}
+		return &SendResult{Task: &t}, nil
+	}
+	var msg a2a.Message
+	if err := json.Unmarshal(out.Result, &msg); err != nil {
+		return nil, err
+	}
+	return &SendResult{Message: &msg}, nil
+}
+
+// Answer is the answer to a task waiting for input.
+type Answer struct {
+	Text     string         `json:"text,omitempty"`
+	Data     map[string]any `json:"data,omitempty"`
+	Decision string         `json:"decision,omitempty"`
+}
+
+// Answer answers a task waiting for input.
+func (c *Client) Answer(ctx context.Context, id string, a *Answer) error {
+	return c.Do(ctx, http.MethodPost, "/api/tasks/"+url.PathEscape(id)+"/answer", a, nil)
+}
+
+// Wait is a task waiting for an answer.
+type Wait struct {
+	Task        *Task     `json:"task"`
+	RunID       string    `json:"runId"`
+	Who         string    `json:"who"`
+	Asker       string    `json:"asker"`
+	Person      bool      `json:"person"`
+	Since       time.Time `json:"since"`
+	Reminders   int       `json:"reminders"`
+	EscalatedTo string    `json:"escalatedTo,omitempty"`
+}
+
+// Waiting lists the workspace's tasks waiting for an answer, longest wait first.
+func (c *Client) Waiting(ctx context.Context) ([]*Wait, error) {
+	var out struct{ Waiting []*Wait }
+	err := c.Do(ctx, http.MethodGet, "/api/waiting", nil, &out)
+	return out.Waiting, err
+}
+
+// Run is a root task and everything it caused.
+type Run struct {
+	ID           string    `json:"id"`
+	Title        string    `json:"title"`
+	Outcome      string    `json:"outcome,omitempty"`
+	Starter      string    `json:"starter"`
+	Recipient    string    `json:"recipient"`
+	State        string    `json:"state"`
+	Waiting      []string  `json:"waiting"`
+	Participants []string  `json:"participants"`
+	Tasks        int       `json:"tasks"`
+	StartedAt    time.Time `json:"startedAt"`
+	UpdatedAt    time.Time `json:"updatedAt"`
+}
+
+// RunFilter narrows Runs. Empty fields don't filter.
+type RunFilter struct {
+	Q, Status, Participant, WaitingOn string
+	Limit                             int
+}
+
+// Runs lists runs, newest first.
+func (c *Client) Runs(ctx context.Context, f RunFilter) ([]*Run, error) {
+	q := url.Values{}
+	for k, v := range map[string]string{"q": f.Q, "status": f.Status, "participant": f.Participant, "waitingOn": f.WaitingOn} {
+		if v != "" {
+			q.Set(k, v)
+		}
+	}
+	if f.Limit > 0 {
+		q.Set("limit", fmt.Sprint(f.Limit))
+	}
+	path := "/api/runs"
+	if len(q) > 0 {
+		path += "?" + q.Encode()
+	}
+	var out struct{ Runs []*Run }
+	err := c.Do(ctx, http.MethodGet, path, nil, &out)
+	return out.Runs, err
+}
+
+// RunDetail is a run with its tasks.
+type RunDetail struct {
+	Run   *Run    `json:"run"`
+	Tasks []*Task `json:"tasks"`
+}
+
+// Run returns one run with its tasks.
+func (c *Client) Run(ctx context.Context, id string) (*RunDetail, error) {
+	var out RunDetail
+	err := c.Do(ctx, http.MethodGet, "/api/runs/"+url.PathEscape(id), nil, &out)
+	return &out, err
 }

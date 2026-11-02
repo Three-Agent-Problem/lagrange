@@ -69,6 +69,8 @@ func TestAPIKeyAuth(t *testing.T) {
 	viewer := e.withKey(t, v.Secret)
 	viewer.do(http.MethodGet, "/api/waiting", nil, http.StatusOK, nil)
 	viewer.do(http.MethodPost, "/api/send", map[string]string{"to": "echo", "text": "hi"}, http.StatusForbidden, nil)
+	// Viewer keys are read-only, even for tasks that wait on their person.
+	viewer.do(http.MethodPost, "/api/tasks/x/answer", map[string]string{"text": "ok"}, http.StatusForbidden, nil)
 
 	// Bob, a member, can't make an admin key.
 	if _, err := e.p.Directory.CreateUser(ctx, "bob@example.com", "Bob", "bob", "hunter2hunter2", false); err != nil {

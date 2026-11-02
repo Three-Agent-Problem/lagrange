@@ -7,6 +7,7 @@
 //	lagrange tunnel --address HANDLE     connect as an address, with a token minted through your login
 //	lagrange login                       log in through the browser and save an API key
 //	lagrange logout / whoami             forget the saved login / show who it is
+//	lagrange mcp                         serve your workspace to an MCP client (stdio)
 //	lagrange token --address HANDLE      mint an address token from the server's database
 //	lagrange migrate                     apply database migrations and exit
 //	lagrange healthcheck                 exit 0 if the local server is healthy (for Docker)
@@ -50,6 +51,7 @@ Commands:
   login     log in through the browser and save an API key
   logout    forget the saved login
   whoami    show who the saved login is
+  mcp       serve your workspace to an MCP client over stdio (claude mcp add lagrange -- lagrange mcp)
   token     mint a token for an address (needs the database)
   migrate   apply database migrations and exit
   healthcheck  check the local server (for container health checks)
@@ -114,6 +116,8 @@ func main() {
 		err = logout(args)
 	case "whoami":
 		err = whoami(ctx, args)
+	case "mcp":
+		err = runMCP(ctx, args)
 	case "token":
 		err = token(ctx, args)
 	case "migrate":

@@ -133,6 +133,28 @@ Other languages send `Authorization: Bearer <token>` and `Lagrange-Task: <id of 
 
 The procurement example in [`three-agent-problem/examples`](https://github.com/three-agent-problem/examples) runs a buyer and two suppliers on a Lagrange server: `go run ./procurement/cmd/platform -server http://localhost:8080 -email ... -password ...`, then message `@acme-buyer` from the inbox.
 
+## Use it from Claude Code, Cursor or any MCP client
+
+`lagrange mcp` serves your workspace to an MCP client over stdio, as you (it uses your `lagrange login`, or `LAGRANGE_KEY`):
+
+```sh
+lagrange login --server https://lagrange.example.com
+claude mcp add lagrange -- lagrange mcp
+```
+
+Cursor, Claude Desktop and others take the same command in their MCP config: `{"command": "lagrange", "args": ["mcp"]}`.
+
+| Tool | |
+|---|---|
+| `list_agents`, `get_agent_card` | Who the workspace can reach, and what they do. |
+| `send_task` | Give an agent work and wait for its answer (or for it to ask something). |
+| `ask_human` | Ask a person in their inbox (with email/Slack, reminders and escalation) and wait for the answer. If they take longer, it returns the task ID for `get_task`. |
+| `get_task` | Check on a task later. |
+| `list_waiting`, `answer` | What waits on you, and answering it (approve/reject). |
+| `search_runs`, `get_run` | "What happened with PO-123?" |
+
+So "ask @northwind-supplier for a quote and get @ada to approve it" works from your editor, and every step shows up in the runs and the live graph. A viewer key gives a read-only MCP server.
+
 ## How it works
 
 ```mermaid
@@ -314,7 +336,7 @@ And two HTTP headers (gRPC metadata) that agents on the platform send with their
 2. Binary releases (Homebrew, a GHCR image) and a Slack app with buttons.
 3. OpenTelemetry with `traceparent` across hops.
 4. Several Lagrange replicas behind one load balancer (cluster mode and `LISTEN/NOTIFY` are built for it; this release tests one replica).
-5. An MCP bridge, so MCP clients can message addresses; pruning of recorded exchanges.
+5. A remote MCP endpoint for claude.ai and ChatGPT connectors (OAuth); `lagrange tunnel --mcp` to put an MCP server behind an address; pruning of recorded exchanges.
 
 ## Development
 
