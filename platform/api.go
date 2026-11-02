@@ -34,6 +34,7 @@ func (p *Platform) api(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/logout", p.handleLogout)
 	mux.Handle("GET /api/me", p.session(p.handleMe, false, true))
 	p.keyRoutes(mux)
+	p.webhookRoutes(mux)
 	p.accountRoutes(mux)
 	p.workspaceRoutes(mux)
 	p.accessRoutes(mux)

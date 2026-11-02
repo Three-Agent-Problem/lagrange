@@ -3,6 +3,7 @@ import { useEffect, useState, type FormEvent } from 'react'
 import { api, type NotificationSettingsView } from '@/lib/api'
 import { Connections } from '@/features/access/Access'
 import { ApiKeys } from '@/features/keys/ApiKeys'
+import { Webhooks } from '@/features/webhooks/Webhooks'
 import { Members } from '@/features/workspaces/Workspaces'
 import { useSession } from '@/store/session'
 import { Button } from '@/ui/AnswerForm'
@@ -30,6 +31,7 @@ export function Settings() {
         <Connections />
         <Notifications />
         <ApiKeys />
+        <Webhooks />
         <Password />
         <LinkedAccounts />
       </div>

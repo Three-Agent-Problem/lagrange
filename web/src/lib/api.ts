@@ -57,6 +57,23 @@ export type Workspace = { id: number; slug: string; name: string; role: Role }
 
 export type Member = User & { role: Role; joinedAt: string }
 
+/** A workspace's webhook endpoint, without its secret. delivered/failed count the last day. */
+export type Webhook = { id: number; url: string; description: string; events: string[]; active: boolean; createdAt: string; delivered: number; failed: number; pending: number }
+
+export type WebhookDelivery = {
+  id: number
+  eventId: string
+  type: string
+  status: 'pending' | 'delivered' | 'failed'
+  attempts: number
+  lastStatus?: number
+  lastError?: string
+  nextAt?: string
+  createdAt: string
+  deliveredAt?: string
+  payload: unknown
+}
+
 /** A personal API key, without its secret. */
 export type APIKey = { id: number; name: string; prefix: string; role: Role; workspace: string; createdAt: string; lastUsed?: string }
 
@@ -357,6 +374,13 @@ export const api = {
   waiting: () => call<{ waiting: Wait[]; policy: WaitPolicy }>('GET', '/api/waiting'),
   remind: (taskId: string) => call<void>('POST', `/api/waiting/${encodeURIComponent(taskId)}/remind`, {}),
   setWaitPolicy: (p: WaitPolicy) => call<{ policy: WaitPolicy }>('PUT', '/api/settings/wait-policy', p),
+  webhooks: () => call<{ webhooks: Webhook[]; events: string[] }>('GET', '/api/webhooks'),
+  createWebhook: (h: { url: string; description: string; events: string[] }) => call<{ webhook: Webhook; secret: string }>('POST', '/api/webhooks', h),
+  updateWebhook: (id: number, h: { active?: boolean; events?: string[]; url?: string; description?: string }) => call<void>('PUT', `/api/webhooks/${id}`, h),
+  deleteWebhook: (id: number) => call<void>('DELETE', `/api/webhooks/${id}`, {}),
+  webhookDeliveries: (id: number) => call<{ deliveries: WebhookDelivery[] }>('GET', `/api/webhooks/${id}/deliveries`),
+  testWebhook: (id: number) => call<void>('POST', `/api/webhooks/${id}/test`, {}),
+  retryDelivery: (id: number, delivery: number) => call<void>('POST', `/api/webhooks/${id}/deliveries/${delivery}/retry`, {}),
   apiKeys: () => call<{ keys: APIKey[] }>('GET', '/api/keys'),
   createAPIKey: (k: { name: string; workspace: string; role: Role }) => call<{ key: APIKey; secret: string }>('POST', '/api/keys', k),
   revokeAPIKey: (id: number) => call<void>('DELETE', `/api/keys/${id}`, {}),

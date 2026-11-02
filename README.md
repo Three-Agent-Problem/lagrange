@@ -133,6 +133,24 @@ Other languages send `Authorization: Bearer <token>` and `Lagrange-Task: <id of 
 
 The procurement example in [`three-agent-problem/examples`](https://github.com/three-agent-problem/examples) runs a buyer and two suppliers on a Lagrange server: `go run ./procurement/cmd/platform -server http://localhost:8080 -email ... -password ...`, then message `@acme-buyer` from the inbox.
 
+## Webhooks
+
+**Settings → Webhooks** (admins) sends a workspace's events to your URL, so Zapier, n8n, Make or your own service can react without polling:
+
+| Event | When |
+|---|---|
+| `task.waiting` | A task stops on someone: a question or an approval (`waitingOn`, `asker`, `question`). |
+| `task.answered` | Someone answered a waiting task (`answeredBy`, `answer`). |
+| `run.completed` / `run.failed` | A run (a root task and everything it caused) finished, or failed, was rejected or canceled. |
+| `address.online` / `address.offline` | An agent's tunnel came up, or its last one dropped. |
+
+Each delivery is a POST of `{id, type, createdAt, workspace, data}`, with these headers:
+- `Lagrange-Event`: the event type.
+- `Lagrange-Delivery`: the delivery ID.
+- `Lagrange-Signature: t=<unix>,v1=<hex>`: an HMAC-SHA256 of `<t>.<body>` made with the webhook's signing secret (`whsec_…`, shown once).
+
+In Go, `webhook.Verify(secret, header, body, 0)` checks the signature and rejects anything older than five minutes. Answer 2xx within 15 s. Other answers are retried with backoff (10 s, 30 s, 90 s, … up to 8 tries, about a day). Settings shows the last 50 deliveries, with their payloads, test events and redelivery. Events are read from the activity log, so none are lost while your endpoint is down, and replicas don't send them twice. Order isn't guaranteed, so use `createdAt`. Webhook URLs on private networks are refused unless `LAGRANGE_ALLOW_PRIVATE_PUSH=1`.
+
 ## Use it from Claude Code, Cursor or any MCP client
 
 `lagrange mcp` serves your workspace to an MCP client over stdio, as you (it uses your `lagrange login`, or `LAGRANGE_KEY`):

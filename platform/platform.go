@@ -41,6 +41,7 @@ import (
 	"github.com/three-agent-problem/lagrange/pg"
 	"github.com/three-agent-problem/lagrange/relay"
 	"github.com/three-agent-problem/lagrange/tunnel"
+	"github.com/three-agent-problem/lagrange/webhook"
 )
 
 // Config configures a server.
@@ -71,6 +72,10 @@ type Config struct {
 	// WaitTick is how often the team's wait policy (reminders, escalations, cancels) is
 	// applied (default 30s).
 	WaitTick time.Duration
+	// WebhookTick is how often webhook events are fanned out and sent (default 1s).
+	WebhookTick time.Duration
+	// WebhookRetryBase is the first webhook retry delay (default 10s).
+	WebhookRetryBase time.Duration
 	// EventPoll is how often subscribers poll for task events (default 100ms).
 	EventPoll time.Duration
 	// Email sends notifications by email (notify.ParseSMTP). Nil: no email; Slack still works.
@@ -101,6 +106,7 @@ type Platform struct {
 	Tasks     *pg.TaskStore
 	Relay     *relay.Relay
 	Notify    *notify.Notifier
+	Webhooks  *webhook.Dispatcher
 	// A2A is the a2a-go request handler that serves every address.
 	A2A     a2asrv.RequestHandler
 	Tunnels *tunnel.Server
@@ -209,6 +215,15 @@ func New(ctx context.Context, cfg Config) (*Platform, error) {
 		cfg.WaitTick = 30 * time.Second
 	}
 	go p.runWaitTimers(bg, cfg.WaitTick)
+	p.Webhooks = &webhook.Dispatcher{
+		DB: db, Activity: p.Activity, PublicURL: cfg.PublicURL, Client: webhook.NewClient(cfg.AllowPrivatePush),
+		RetryBase: cfg.WebhookRetryBase, Logger: log,
+		Handles: func(ctx context.Context, ws int64) ([]string, error) { return p.Directory.WorkspaceHandles(ctx, ws) },
+	}
+	if cfg.WebhookTick <= 0 {
+		cfg.WebhookTick = time.Second
+	}
+	go p.Webhooks.Run(bg, cfg.WebhookTick)
 	if p.seed = newSeeder(cfg, log); p.seed != nil {
 		// A server with no agents yet gets the scripted requests too.
 		var empty bool

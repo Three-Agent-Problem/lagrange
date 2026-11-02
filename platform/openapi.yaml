@@ -246,6 +246,86 @@ paths:
                   entries: { type: array, items: { type: object, additionalProperties: true } }
                   exchanges: { type: array, items: { type: object, additionalProperties: true } }
         "404": { $ref: "#/components/responses/Error" }
+  /api/webhooks:
+    get:
+      summary: List the workspace's webhooks (admin)
+      responses:
+        "200":
+          description: Webhooks, with the last day's delivery counts, and the event types.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  webhooks: { type: array, items: { $ref: "#/components/schemas/Webhook" } }
+                  events: { type: array, items: { type: string } }
+    post:
+      summary: Add a webhook (admin); the signing secret is shown once
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [url, events]
+              properties:
+                url: { type: string }
+                description: { type: string }
+                events: { type: array, items: { $ref: "#/components/schemas/EventType" } }
+      responses:
+        "201":
+          description: The webhook and its secret (whsec_…).
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  webhook: { $ref: "#/components/schemas/Webhook" }
+                  secret: { type: string }
+        "400": { $ref: "#/components/responses/Error" }
+  /api/webhooks/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer } }
+    put:
+      summary: Change a webhook's URL, events, description, or pause it (admin)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                url: { type: string }
+                description: { type: string }
+                events: { type: array, items: { $ref: "#/components/schemas/EventType" } }
+                active: { type: boolean }
+      responses:
+        "204": { description: Changed. }
+    delete:
+      summary: Delete a webhook (admin)
+      responses:
+        "204": { description: Deleted. }
+  /api/webhooks/{id}/deliveries:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer } }
+    get:
+      summary: The webhook's last 50 deliveries (admin)
+      responses:
+        "200":
+          description: Deliveries, newest first.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  deliveries: { type: array, items: { type: object, additionalProperties: true } }
+  /api/webhooks/{id}/test:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer } }
+    post:
+      summary: Send a ping event to the webhook (admin)
+      responses:
+        "202": { description: Queued. }
   /api/cli/token:
     post:
       summary: Trade a `lagrange login` code and its PKCE verifier for an API key
@@ -289,6 +369,33 @@ components:
             properties:
               error: { type: string }
   schemas:
+    EventType:
+      type: string
+      enum: [task.waiting, task.answered, run.completed, run.failed, address.online, address.offline]
+    Webhook:
+      type: object
+      properties:
+        id: { type: integer }
+        url: { type: string }
+        description: { type: string }
+        events: { type: array, items: { $ref: "#/components/schemas/EventType" } }
+        active: { type: boolean }
+        delivered: { type: integer }
+        failed: { type: integer }
+        pending: { type: integer }
+    WebhookEvent:
+      type: object
+      description: |
+        The body Lagrange POSTs to a webhook. Headers: Lagrange-Event (the type),
+        Lagrange-Delivery (the delivery ID), Lagrange-Signature ("t=<unix>,v1=<hex>":
+        HMAC-SHA256 of "<t>.<body>" with the signing secret). Answer 2xx within 15s;
+        anything else is retried with backoff (10s, 30s, 90s, … up to 8 tries).
+      properties:
+        id: { type: string, description: "evt_<seq>; the same event keeps its ID across retries." }
+        type: { type: string }
+        createdAt: { type: string, format: date-time }
+        workspace: { type: string }
+        data: { type: object, additionalProperties: true }
     Role:
       type: string
       enum: [viewer, member, admin, owner]
