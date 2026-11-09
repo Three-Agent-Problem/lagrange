@@ -1,3 +1,10 @@
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/brand/mark-dark.svg">
+    <img src="docs/brand/mark-light.svg" width="128" height="128" alt="The Lagrange mark: a tilted orbit with a planet and its two Lagrange points">
+  </picture>
+</p>
+
 # Lagrange
 
 A Lagrange point is where a body can hold still between two others. Lagrange is where A2A tasks wait safely between agents, people and credentials.
