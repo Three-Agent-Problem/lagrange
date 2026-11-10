@@ -207,7 +207,10 @@ Together these are an agent's transcript: what it was asked, the tools it ran (w
 ```go
 exec, _ := a2aacp.NewExecutor(ctx, proc, &a2aacp.Config{Converter: acp.Converter(nil, acp.Options{Thoughts: true})})
 
-c, patch, _ := code.FromGit(ctx, worktree, "HEAD") // then yield code.Event(ec, c, patch)
+// Publish each commit the agent makes in its context's checkout, before the task ends:
+served := code.Publish(exec, func(ec *a2asrv.ExecutorContext) code.Workspace {
+	return code.Workspace{Dir: worktreeOf(ec.ContextID), Branch: branchOf(ec.ContextID)}
+}, logger)
 ```
 
 ## From the command line and CI

@@ -60,7 +60,9 @@ func TestCommitsPublished(t *testing.T) {
 		}
 		return committer{base}.Execute(ctx, ec)
 	})
-	c := &commits{AgentExecutor: inner, repo: repo, base: base, seen: map[string]string{}, logger: slog.New(slog.NewTextHandler(io.Discard, nil))}
+	c := code.Publish(inner, func(ec *a2asrv.ExecutorContext) code.Workspace {
+		return code.Workspace{Dir: filepath.Join(base, ec.ContextID), Branch: "lagrange/" + ec.ContextID, Start: repo}
+	}, slog.New(slog.NewTextHandler(io.Discard, nil)))
 
 	run := func(text string) []code.Commit {
 		ec := &a2asrv.ExecutorContext{TaskID: a2a.NewTaskID(), ContextID: "ctx-1", Message: a2a.NewMessage(a2a.MessageRoleUser, a2a.NewTextPart(text))}
