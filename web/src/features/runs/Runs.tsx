@@ -1,5 +1,5 @@
 import { Mark, Orbiting } from '@/ui/Brand'
-import { ArchiveRestore, ArrowRight, ChevronLeft, ChevronRight, Eye, EyeOff, Network, Pause, Play, Search, Webhook } from 'lucide-react'
+import { ArchiveRestore, ArrowRight, Check, ChevronLeft, ChevronRight, Copy as CopyIcon, Download, Eye, EyeOff, Network, Pause, Play, Search, Webhook } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router'
 import { api, type Exchange, type Run, type RunDetail, type RunStatus } from '@/lib/api'
@@ -17,6 +17,7 @@ import { FailureBanner } from '@/features/runs/FailureBanner'
 import { ReportCard } from '@/features/runs/ReportCard'
 import { TimeBar } from '@/features/runs/TimeBar'
 import { timeSplit } from '@/features/runs/timing'
+import { runFileName, runMarkdown } from '@/features/runs/export'
 import { KIND_COLOR, Sequence } from '@/features/runs/Sequence'
 import { exchangeLine, exchangeParties, pretty, story, type Content, type Step } from '@/features/runs/story'
 
@@ -323,6 +324,7 @@ function RunView({ id, kind, name, onArchived }: { id: string; kind: (h: string)
           >
             <Network size={13} /> Watch on graph
           </button>
+          <ExportRun markdown={() => runMarkdown({ run, steps, split, exchanges: data.exchanges.length, name })} file={runFileName(run)} />
           <button
             className="flex items-center gap-1.5 rounded-lg border border-line px-2.5 py-1.5 text-xs font-bold text-muted hover:text-ink"
             title={run.archived ? 'Show this run in the list again' : 'Hide this run from the list (a test, say); the Hidden filter still finds it'}
@@ -633,6 +635,42 @@ function Traffic({ exchanges, stepOf, onStep }: { exchanges: Exchange[]; stepOf:
         {list.length === 0 && <li className="text-sm text-muted">No HTTP recorded{dir ? ' of this kind' : ''}.</li>}
       </ol>
     </div>
+  )
+}
+
+/** Copy the run as Markdown, or save it as a .md file: steps, times, parties, the report. */
+function ExportRun({ markdown, file }: { markdown: () => string; file: string }) {
+  const [copied, setCopied] = useState(false)
+  const btn = 'flex items-center gap-1.5 rounded-lg border border-line px-2.5 py-1.5 text-xs font-bold text-muted hover:text-ink'
+  return (
+    <>
+      <button
+        className={btn}
+        title="Copy the whole run as Markdown: every step with its time, who to whom, kind and title, plus the report"
+        onClick={() => {
+          void navigator.clipboard?.writeText(markdown())
+          setCopied(true)
+          setTimeout(() => setCopied(false), 1200)
+        }}
+      >
+        {copied ? <Check size={13} className="text-good" /> : <CopyIcon size={13} />} {copied ? 'Copied' : 'Copy run'}
+      </button>
+      <button
+        className={btn}
+        title={`Save the run as ${file}`}
+        aria-label="Download the run as Markdown"
+        onClick={() => {
+          const url = URL.createObjectURL(new Blob([markdown()], { type: 'text/markdown' }))
+          const a = document.createElement('a')
+          a.href = url
+          a.download = file
+          a.click()
+          setTimeout(() => URL.revokeObjectURL(url), 1000)
+        }}
+      >
+        <Download size={13} /> .md
+      </button>
+    </>
   )
 }
 
