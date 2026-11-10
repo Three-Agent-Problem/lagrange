@@ -126,7 +126,12 @@ func browserCode(ctx context.Context, server string, q url.Values) (string, erro
 		}
 	})}
 	go func() { _ = srv.Serve(ln) }()
-	defer srv.Close()
+	defer func() {
+		// Shut down gracefully: the browser still has to get the page saying it worked.
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancel()
+		_ = srv.Shutdown(ctx)
+	}()
 
 	u := authorizeURL(server, q)
 	fmt.Println("Opening your browser to log in. If it doesn't open, visit:\n  " + u)
