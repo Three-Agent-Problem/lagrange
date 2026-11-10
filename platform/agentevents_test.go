@@ -13,6 +13,7 @@ import (
 	"github.com/a2aproject/a2a-go/v2/a2asrv"
 
 	"github.com/three-agent-problem/lagrange/activity"
+	"github.com/three-agent-problem/lagrange/code"
 	"github.com/three-agent-problem/lagrange/relay"
 )
 
@@ -40,6 +41,8 @@ func coder(cost *float64) a2asrv.AgentExecutor {
 				tool("Running", "in_progress", map[string]any{"input": map[string]any{"command": "go test ./..."}}) &&
 				tool("Finished", "completed", map[string]any{"output": "ok  ./..."}) &&
 				usage() && usage() &&
+				yield(code.Event(ec, code.Commit{SHA: "3f2a1c9e00", Branch: "lagrange/x", Subject: "fix the tests", Insertions: 4, Deletions: 1,
+					Files: []code.File{{Path: "a.go", Insertions: 4, Deletions: 1}}}, "--- a/a.go\n+++ b/a.go\n"), nil) &&
 				yield(a2a.NewArtifactEvent(ec, a2a.NewTextPart("done")), nil) &&
 				yield(a2a.NewStatusUpdateEvent(ec, a2a.TaskStateCompleted, nil), nil)
 		}
@@ -68,7 +71,7 @@ func TestAgentEvents(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var created, running, finished *activity.Entry
+	var created, running, finished, commit *activity.Entry
 	var usage []*activity.Entry
 	for _, x := range entries {
 		tc, _ := x.Data["toolCall"].(map[string]any)
@@ -81,7 +84,15 @@ func TestAgentEvents(t *testing.T) {
 			finished = x
 		case x.Kind == activity.KindUsage:
 			usage = append(usage, x)
+		case x.Kind == activity.KindArtifact && x.Data["commit"] != nil:
+			commit = x
 		}
+	}
+	if commit == nil || commit.Summary != "commit 3f2a1c9 fix the tests (+4 −1)" || commit.Data["content"] != nil {
+		t.Fatalf("commit entry = %+v", commit)
+	}
+	if c, patch, ok := code.Find(first.Artifacts[0].Parts); !ok || c.Branch != "lagrange/x" || !strings.Contains(patch, "+++ b/a.go") {
+		t.Fatalf("the task's commit artifact: %+v %q", c, patch)
 	}
 	if tags, _ := created.Data["tags"].(map[string]any); tags["subtask"] != "S3" || tags["run"] != "r1" {
 		t.Fatalf("creation entry data = %v", created.Data)

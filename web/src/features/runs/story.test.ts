@@ -116,3 +116,23 @@ describe('tool calls', () => {
     expect(call.entries.map((e) => e.seq)).toEqual([2, 4])
   })
 })
+
+describe('commits', () => {
+  it('tells a commit artifact as a commit, with its files', () => {
+    const at = (s: number) => new Date(Date.UTC(2026, 10, 10, 9, 0, s)).toISOString()
+    const base = { taskId: 't1', sender: 'lead', recipient: 'coder', contextId: 'c1' }
+    const s = story({
+      entries: [
+        { ...base, seq: 1, at: at(0), kind: 'task', state: 'TASK_STATE_SUBMITTED', summary: 'fix it' },
+        { ...base, seq: 2, at: at(5), kind: 'artifact', summary: 'commit 3f2a1c9 fix the tests (+4 −1)', data: {
+          artifactId: 'commit-3f2a1c9e00', lastChunk: true,
+          commit: { sha: '3f2a1c9e00', subject: 'fix the tests', branch: 'lagrange/x', insertions: 4, deletions: 1, files: [{ path: 'a.go', insertions: 4, deletions: 1 }] },
+        } },
+      ],
+      exchanges: [],
+    } as unknown as RunDetail)
+    const st = s.steps[1]
+    expect(st.title).toBe('@coder committed “fix the tests” (3f2a1c9, +4 −1)')
+    expect(st.body?.fields).toEqual([['commit', '3f2a1c9e00'], ['branch', 'lagrange/x'], ['a.go', '+4 −1']])
+  })
+})

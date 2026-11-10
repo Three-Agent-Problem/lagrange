@@ -6,6 +6,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"iter"
 	"log/slog"
 	"maps"
 	"net/http"
@@ -22,6 +23,7 @@ import (
 	"github.com/a2aproject/a2a-go/v2/integrations/executor/a2aacp"
 
 	"github.com/three-agent-problem/lagrange/acp"
+	"github.com/three-agent-problem/lagrange/code"
 )
 
 // acpOptions configures a coding agent served with tunnel --acp.
@@ -180,6 +182,7 @@ func (o *acpOptions) config() (*a2aacp.Config, error) {
 			}
 			base = filepath.Join(dir, "lagrange", "contexts", filepath.Base(abs))
 		}
+		o.sessionsDir = base
 		var mu sync.Mutex // one worktree at a time: git locks the repository
 		cfg.Session = func(ctx context.Context, ec *a2asrv.ExecutorContext) (a2aacp.SessionParams, error) {
 			p := a2aacp.SessionParams{MCPServers: o.mcp}
@@ -268,6 +271,10 @@ func acpHandler(ctx context.Context, o *acpOptions, logger *slog.Logger) (http.H
 	if err != nil {
 		return nil, nil, fmt.Errorf("starting %s: %w", o.argv[0], err)
 	}
+	var served a2asrv.AgentExecutor = exec
+	if o.perContext == "worktree" {
+		served = &commits{AgentExecutor: exec, repo: o.dir, base: o.sessionsDir, seen: map[string]string{}, logger: logger}
+	}
 	name := o.name
 	if name == "" {
 		name = o.argv[0]
@@ -290,7 +297,7 @@ func acpHandler(ctx context.Context, o *acpOptions, logger *slog.Logger) (http.H
 			Tags: []string{"coding", "acp"},
 		}},
 	}
-	h := a2asrv.NewHandler(exec)
+	h := a2asrv.NewHandler(served)
 	mux := http.NewServeMux()
 	mux.Handle(a2asrv.WellKnownAgentCardPath, a2asrv.NewStaticAgentCardHandler(card))
 	mux.Handle("/rpc", a2asrv.NewJSONRPCHandler(h))
@@ -299,4 +306,78 @@ func acpHandler(ctx context.Context, o *acpOptions, logger *slog.Logger) (http.H
 			logger.Warn("stopping the agent", "error", err)
 		}
 	}, nil
+}
+
+// commits publishes the commits an agent makes in its worktree, as lagrange/code
+// commit artifacts of the task that made them, just before the task ends or waits.
+type commits struct {
+	a2asrv.AgentExecutor
+	repo, base string
+	logger     *slog.Logger
+
+	mu   sync.Mutex
+	seen map[string]string // context ID -> the last commit published (or the start)
+}
+
+func (c *commits) Execute(ctx context.Context, ec *a2asrv.ExecutorContext) iter.Seq2[a2a.Event, error] {
+	return func(yield func(a2a.Event, error) bool) {
+		name := unsafeName.ReplaceAllString(ec.ContextID, "_")
+		dir := filepath.Join(c.base, name)
+		c.mu.Lock()
+		if c.seen[ec.ContextID] == "" {
+			// Before the first task the worktree doesn't exist: it starts at the repo's HEAD.
+			from := dir
+			if _, err := os.Stat(dir); err != nil {
+				from = c.repo
+			}
+			c.seen[ec.ContextID] = revParse(ctx, from, "HEAD")
+		}
+		c.mu.Unlock()
+		for ev, err := range c.AgentExecutor.Execute(ctx, ec) {
+			if st, ok := ev.(*a2a.TaskStatusUpdateEvent); ok && err == nil && (st.Status.State.Terminal() || st.Status.State == a2a.TaskStateInputRequired || st.Status.State == a2a.TaskStateAuthRequired) {
+				if !c.publish(ctx, ec, dir, "lagrange/"+name, yield) {
+					return
+				}
+			}
+			if !yield(ev, err) {
+				return
+			}
+		}
+	}
+}
+
+// publish yields an artifact for each commit since the last one published.
+func (c *commits) publish(ctx context.Context, ec *a2asrv.ExecutorContext, dir, branch string, yield func(a2a.Event, error) bool) bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	from := c.seen[ec.ContextID]
+	if from == "" {
+		return true
+	}
+	out, err := exec.CommandContext(ctx, "git", "-C", dir, "rev-list", "--reverse", from+"..HEAD").Output()
+	if err != nil {
+		c.logger.Warn("listing the agent's commits", "dir", dir, "error", err)
+		return true
+	}
+	for _, sha := range strings.Fields(string(out)) {
+		cm, patch, err := code.FromGit(ctx, dir, sha)
+		if err != nil {
+			c.logger.Warn("reading a commit", "sha", sha, "error", err)
+			continue
+		}
+		cm.Branch = branch
+		if !yield(code.Event(ec, cm, patch), nil) {
+			return false
+		}
+		c.seen[ec.ContextID] = sha
+	}
+	return true
+}
+
+func revParse(ctx context.Context, dir, rev string) string {
+	out, err := exec.CommandContext(ctx, "git", "-C", dir, "rev-parse", "--verify", "--quiet", rev).Output()
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(out))
 }

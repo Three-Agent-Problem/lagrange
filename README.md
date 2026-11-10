@@ -198,11 +198,16 @@ Every A2A event becomes an activity entry (`GET /api/events`, the live graph, th
 - **Tool calls.** A status message with a `{"toolCall": {"id", "title", "kind", "status", "input", "output"}}` data part is recorded with that data, capped at 4 KB each for input and output. Coding agents report a call when it starts (`in_progress`) and when it ends, and the Runs page shows the pair as one step with its duration.
 - **Usage.** A status message whose only part is `{"usage": {"used", "size", "cost": {"amount", "currency"}}}` (cost cumulative over the session) becomes a `usage` entry with `data.costDelta`, what the session spent since its previous report. Each run adds those up as `cost`, shown in the runs list.
 - **Thoughts.** An agent can stream its thinking into a `thoughts` artifact, next to its `response`.
+- **Commits.** An artifact named `commit` with a `{"commit": {"sha", "branch", "subject", "body", "author", "at", "files": [{"path", "insertions", "deletions"}], "insertions", "deletions"}}` data part, plus the patch as a `text/x-diff` text part, is recorded as "commit 3f2a1c9 fix the tests (+4 −1)" with `data.commit`; the patch (up to 256 KB) stays in the task, for `GET /api/tasks/{id}`. The Runs page shows it as "@coder committed …" with its files.
 
-`tunnel --acp` does all of this for coding agents (`--thoughts` adds the thinking). For an a2aacp executor of your own, use [`acp.Converter`](acp/acp.go):
+Together these are an agent's transcript: what it was asked, the tools it ran (with their output), what it thought, what it said and what it committed, readable from any client after the fact.
+
+`tunnel --acp` does all of this for coding agents (`--thoughts` adds the thinking; with `--per-context worktree` it publishes each commit the agent makes on its branch, just before the task ends or asks something). For an a2aacp executor of your own, use [`acp.Converter`](acp/acp.go), and [`code`](code/code.go) for commits:
 
 ```go
 exec, _ := a2aacp.NewExecutor(ctx, proc, &a2aacp.Config{Converter: acp.Converter(nil, acp.Options{Thoughts: true})})
+
+c, patch, _ := code.FromGit(ctx, worktree, "HEAD") // then yield code.Event(ec, c, patch)
 ```
 
 ## From the command line and CI

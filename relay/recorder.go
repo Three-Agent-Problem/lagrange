@@ -12,6 +12,7 @@ import (
 
 	"github.com/three-agent-problem/lagrange/acp"
 	"github.com/three-agent-problem/lagrange/activity"
+	"github.com/three-agent-problem/lagrange/code"
 	"github.com/three-agent-problem/lagrange/directory"
 )
 
@@ -148,7 +149,11 @@ func (rec *recorder) record(ev a2a.Event) {
 		if ev.Artifact != nil {
 			e.Summary = ev.Artifact.Name
 			e.Data = map[string]any{"artifactId": string(ev.Artifact.ID), "append": ev.Append, "lastChunk": ev.LastChunk}
-			if c := Preview(ev.Artifact.Parts, 4096); c != "" {
+			if c, _, ok := code.Find(ev.Artifact.Parts); ok {
+				// A commit: its description, not the patch, which stays in the task.
+				e.Summary = "commit " + c.Summary()
+				e.Data["commit"] = c.Map()
+			} else if c := Preview(ev.Artifact.Parts, 4096); c != "" {
 				e.Data["content"] = c
 			}
 		}

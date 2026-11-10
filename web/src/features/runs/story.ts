@@ -81,6 +81,42 @@ const str = (v: unknown) => (typeof v === 'string' ? v : undefined)
 
 type ToolCall = { id: string; title?: string; kind?: string; status?: string; output?: string }
 
+/** A commit an agent published (data.commit of an artifact entry, see lagrange/code). */
+export type Commit = {
+  sha: string
+  subject: string
+  branch?: string
+  body?: string
+  insertions: number
+  deletions: number
+  files?: { path: string; insertions: number; deletions: number }[]
+}
+
+/** The commit an artifact entry records, if it is one. */
+export function commit(e: Entry): Commit | undefined {
+  const c = e.data?.commit
+  if (!c || typeof c !== 'object' || Array.isArray(c)) return undefined
+  const m = c as Record<string, unknown>
+  if (typeof m.sha !== 'string' || !m.sha) return undefined
+  return {
+    sha: m.sha,
+    subject: typeof m.subject === 'string' ? m.subject : '',
+    branch: typeof m.branch === 'string' ? m.branch : undefined,
+    body: typeof m.body === 'string' ? m.body : undefined,
+    insertions: typeof m.insertions === 'number' ? m.insertions : 0,
+    deletions: typeof m.deletions === 'number' ? m.deletions : 0,
+    files: Array.isArray(m.files) ? (m.files as Commit['files']) : undefined,
+  }
+}
+
+function commitBody(c: Commit): Content {
+  const fields: [string, string][] = [['commit', c.sha]]
+  if (c.branch) fields.push(['branch', c.branch])
+  for (const f of c.files ?? []) fields.push([f.path, `+${f.insertions} −${f.deletions}`])
+  if (c.body) fields.push(['message', c.body])
+  return { fields }
+}
+
 /** The tool call a task entry reports (data.toolCall, see lagrange/acp), if any. */
 export function toolCall(e: Entry): ToolCall | undefined {
   const tc = e.data?.toolCall
@@ -160,7 +196,10 @@ function tell(run: Pick<RunDetail, 'entries' | 'exchanges'> & { tasks?: RunDetai
           prev.entries.push(e)
           continue
         }
-        const s = push({ at, kind: 'artifact', from: recipient, taskId: tid, title: `${who(recipient)} produced ${e.summary ? `“${e.summary}”` : 'a result'}`, body, entries: [e] })
+        const c = commit(e)
+        const s = c
+          ? push({ at, kind: 'artifact', from: recipient, taskId: tid, title: `${who(recipient)} committed “${c.subject}” (${c.sha.slice(0, 7)}, +${c.insertions} −${c.deletions})`, body: commitBody(c), entries: [e] })
+          : push({ at, kind: 'artifact', from: recipient, taskId: tid, title: `${who(recipient)} produced ${e.summary ? `“${e.summary}”` : 'a result'}`, body, entries: [e] })
         artifactStep.set(id, s)
         continue
       }
