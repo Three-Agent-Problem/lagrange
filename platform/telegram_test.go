@@ -20,6 +20,7 @@ import (
 	"github.com/a2aproject/a2a-go/v2/a2asrv"
 
 	"github.com/three-agent-problem/lagrange/ask"
+	"github.com/three-agent-problem/lagrange/directory"
 	"github.com/three-agent-problem/lagrange/platform"
 	"github.com/three-agent-problem/lagrange/relay"
 	"github.com/three-agent-problem/lagrange/report"
@@ -545,4 +546,28 @@ func TestTelegramRunReport(t *testing.T) {
 	}
 	ada.do(http.MethodPost, "/api/send", map[string]any{"to": "lead", "text": "Again"}, http.StatusOK, nil)
 	f.quiet(t, n+4, "muted")
+}
+
+// Halo connects the bot with an API key; a viewer key can only look.
+func TestTelegramWithAPIKey(t *testing.T) {
+	e, _, ada := telegramEnv(t)
+	key := func(role string) *api {
+		var k struct{ Secret string }
+		ada.do(http.MethodPost, "/api/keys", map[string]string{"name": role, "workspace": directory.DefaultWorkspace, "role": role}, http.StatusCreated, &k)
+		return e.withKey(t, k.Secret)
+	}
+	viewer, member := key("viewer"), key("member")
+	var st telegram.Status
+	viewer.do(http.MethodGet, "/api/settings/telegram", nil, http.StatusOK, &st)
+	viewer.do(http.MethodPut, "/api/settings/telegram", map[string]string{"token": tgToken}, http.StatusForbidden, nil)
+	member.do(http.MethodPut, "/api/settings/telegram", map[string]string{"token": tgToken}, http.StatusOK, &st)
+	if !st.Connected || st.PairLink == "" {
+		t.Fatalf("status = %+v", st)
+	}
+	member.do(http.MethodDelete, "/api/settings/telegram", struct{}{}, http.StatusNoContent, nil)
+	st = telegram.Status{}
+	ada.do(http.MethodGet, "/api/settings/telegram", nil, http.StatusOK, &st)
+	if st.Connected {
+		t.Fatal("still connected after the key disconnected it")
+	}
 }

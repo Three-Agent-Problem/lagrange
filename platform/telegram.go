@@ -18,12 +18,14 @@ import (
 // and read their waiting tasks and runs. See package telegram.
 
 func (p *Platform) telegramRoutes(mux *http.ServeMux) {
-	mux.Handle("GET /api/settings/telegram", p.authed(p.handleTelegram))
-	mux.Handle("PUT /api/settings/telegram", p.authed(p.handleConnectTelegram))
-	mux.Handle("DELETE /api/settings/telegram", p.authed(p.handleDisconnectTelegram))
-	mux.Handle("POST /api/settings/telegram/pair", p.authed(p.handlePairTelegram))
-	mux.Handle("PUT /api/settings/telegram/level", p.authed(p.handleTelegramLevel))
-	mux.Handle("POST /api/settings/telegram/test", p.authed(p.handleTestTelegram))
+	// API keys work here too (Halo connects the bot with one); viewer keys only read.
+	keyed := func(h apiHandler) http.Handler { return p.session(h, true, true) }
+	mux.Handle("GET /api/settings/telegram", keyed(p.handleTelegram))
+	mux.Handle("PUT /api/settings/telegram", keyed(p.handleConnectTelegram))
+	mux.Handle("DELETE /api/settings/telegram", keyed(p.handleDisconnectTelegram))
+	mux.Handle("POST /api/settings/telegram/pair", keyed(p.handlePairTelegram))
+	mux.Handle("PUT /api/settings/telegram/level", keyed(p.handleTelegramLevel))
+	mux.Handle("POST /api/settings/telegram/test", keyed(p.handleTestTelegram))
 }
 
 // personal is the scope of one person on their own: what they sent and what was sent

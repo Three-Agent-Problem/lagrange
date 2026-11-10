@@ -252,6 +252,8 @@ Each person can connect their own Telegram bot in **Settings → Telegram** (or 
 1. In @BotFather, `/newbot`, then paste the token in Settings. The server checks it with Telegram and never shows it again.
 2. Tap **Open @your_bot** and **Start**. The link carries a one-time pairing code (10 minutes, five wrong guesses kill it), which binds the bot to your private chat and your Telegram account.
 
+The settings API (`/api/settings/telegram`) also takes an API key, so tools like Halo can connect it; a viewer key can only read it.
+
 From then on, what waits on you arrives there too, next to email and Slack, with reminders and escalations:
 
 | The task asks | In Telegram |
