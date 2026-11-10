@@ -743,12 +743,23 @@ func (p *Platform) answer(ctx context.Context, me *directory.User, s *scope, id 
 		msg = a2a.NewMessageForTask(a2a.MessageRoleUser, task, parts...)
 	}
 	msg.SetMeta(relay.AnsweredByKey, me.Handle)
-	if _, err := p.A2A.SendMessage(callAs(ctx, stored.User, attrs), &a2a.SendMessageRequest{
-		Tenant: tenant, Message: msg, Config: &a2a.SendMessageConfig{ReturnImmediately: true},
-	}); err != nil {
-		return statusOf(err), err
+	send := &a2a.SendMessageRequest{Tenant: tenant, Message: msg, Config: &a2a.SendMessageConfig{ReturnImmediately: true}}
+	// The store says INPUT_REQUIRED a moment before the execution that set it ends;
+	// an answer in between is refused as "in progress", so wait it out briefly.
+	for wait := 25 * time.Millisecond; ; wait *= 2 {
+		_, err := p.A2A.SendMessage(callAs(ctx, stored.User, attrs), send)
+		if err == nil {
+			return 0, nil
+		}
+		if !strings.Contains(err.Error(), "already in progress") || wait > 2*time.Second {
+			return statusOf(err), err
+		}
+		select {
+		case <-ctx.Done():
+			return statusOf(err), err
+		case <-time.After(wait):
+		}
 	}
-	return 0, nil
 }
 
 // decisionData is the answer an approve or reject decision gives to an approval form
