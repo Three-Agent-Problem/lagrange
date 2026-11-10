@@ -389,9 +389,17 @@ func token(ctx context.Context, args []string) error {
 	handle := fs.String("address", "", "Address handle (required).")
 	create := fs.Bool("create", false, "Create the agent address if it doesn't exist.")
 	label := fs.String("label", "cli", "Label shown in the web app.")
+	apiKey := fs.Bool("api-key", false, "Mint a personal API key (lgk_…) for --email instead of an address token: for a fresh server, from the machine that runs it.")
+	email := fs.String("email", "", "With --api-key: whose key.")
+	workspace := fs.String("workspace", "", "With --api-key: the workspace's slug (default: their first).")
+	role := fs.String("role", "", "With --api-key: the key's role (default: their role in the workspace).")
 	_ = fs.Parse(args)
-	if *handle == "" {
-		return errors.New("token: --address is required")
+	if *apiKey {
+		if *email == "" {
+			return errors.New("token: --api-key needs --email")
+		}
+	} else if *handle == "" {
+		return errors.New("token: --address is required (or --api-key --email for a personal API key)")
 	}
 	db, err := pg.Open(ctx, *dbURL)
 	if err != nil {
@@ -399,6 +407,9 @@ func token(ctx context.Context, args []string) error {
 	}
 	defer db.Close()
 	dir := directory.New(db)
+	if *apiKey {
+		return mintAPIKey(ctx, dir, *email, *workspace, *role, *label)
+	}
 	if _, err := dir.Address(ctx, *handle); errors.Is(err, directory.ErrNotFound) && *create {
 		if err := dir.CreateAgent(ctx, &directory.Address{Handle: *handle}); err != nil {
 			return err
@@ -446,5 +457,36 @@ func migrate(ctx context.Context, args []string) error {
 	}
 	db.Close()
 	fmt.Println("migrations applied")
+	return nil
+}
+
+// mintAPIKey makes a personal API key straight in the database and prints it.
+func mintAPIKey(ctx context.Context, dir *directory.Directory, email, slug, role, label string) error {
+	u, err := dir.UserByEmail(ctx, email)
+	if err != nil {
+		return fmt.Errorf("token: no account %s: %w", email, err)
+	}
+	wss, err := dir.Workspaces(ctx, u.ID)
+	if err != nil {
+		return err
+	}
+	var ws *directory.Workspace
+	for _, w := range wss {
+		if slug == "" || w.Slug == slug {
+			ws = w
+			break
+		}
+	}
+	if ws == nil {
+		return fmt.Errorf("token: %s isn't a member of %s", email, firstOf(slug, "any workspace"))
+	}
+	if label == "cli" {
+		label = "lagrange token --api-key"
+	}
+	secret, _, err := dir.CreateAPIKey(ctx, u.ID, ws.ID, label, firstOf(role, ws.Role))
+	if err != nil {
+		return fmt.Errorf("token: %w", err)
+	}
+	fmt.Println(secret)
 	return nil
 }

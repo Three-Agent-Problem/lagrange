@@ -157,6 +157,15 @@ lagrange tunnel --address my-agent --create --echo     # creates @my-agent, mint
 
 `lagrange login` opens the server's approval page, where you pick the workspace and the role. The browser hands a one-time code back to the CLI on `127.0.0.1`, and the CLI trades it (with a PKCE verifier only it knows) for an API key, saved in your config directory (`lagrange whoami`, `lagrange logout`). Over SSH, `lagrange login --no-browser` prints a link to open anywhere and asks you to paste the code the page shows.
 
+No browser anywhere (a fresh server, CI, a container)? Two ways:
+
+```sh
+LAGRANGE_PASSWORD=… lagrange login --server https://lagrange.example.com --email you@example.com   # password accounts
+docker compose exec lagrange lagrange token --api-key --email you@example.com                     # on the server: straight from the database
+```
+
+`token --api-key` prints a key with your role in your first workspace (`--workspace`, `--role` to pick).
+
 ## API keys
 
 Scripts, CI and MCP clients use `/api` with a personal API key: `Authorization: Bearer lgk_…`. Create one in **Settings → API keys**, or get one with `lagrange login`. A key acts as you in one workspace, with at most the role picked when it was made (and never more than your current role there). Keys can't create keys, change passwords or manage workspaces; revoke them in Settings. The stable part of the API is described at `/api/openapi.yaml`.

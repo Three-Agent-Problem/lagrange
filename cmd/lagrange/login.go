@@ -48,6 +48,8 @@ func login(ctx context.Context, args []string) error {
 	server := fs.String("server", "", "Lagrange server URL (env LAGRANGE_SERVER; default: the last one, or "+defaultServer+").")
 	noBrowser := fs.Bool("no-browser", false, "Don't open a browser: print a link and paste the code it shows.")
 	name := fs.String("name", "", `Name of the key, shown in Settings (default "lagrange CLI on <host>").`)
+	email := fs.String("email", "", "Log in with this email and a password instead of the browser (a fresh server, a box without one). The password comes from LAGRANGE_PASSWORD, or the first line of stdin.")
+	workspace := fs.String("workspace", "", "With --email: the workspace of the key (its slug; default: your first).")
 	_ = fs.Parse(args)
 
 	cfg, err := loadConfig()
@@ -59,21 +61,30 @@ func login(ctx context.Context, args []string) error {
 		host, _ := os.Hostname()
 		*name = "lagrange CLI on " + firstOf(host, "this computer")
 	}
-	verifier := rand.Text() + rand.Text()
-	q := url.Values{"challenge": {directory.PKCEChallenge(verifier)}, "name": {*name}}
-
-	var code string
-	if *noBrowser {
-		code, err = pasteCode(srv, q)
+	var l *client.Login
+	if *email != "" {
+		password, err := readPassword()
+		if err != nil {
+			return err
+		}
+		if l, err = client.PasswordLogin(ctx, srv, *email, password, *workspace, *name); err != nil {
+			return fmt.Errorf("login: %w", err)
+		}
 	} else {
-		code, err = browserCode(ctx, srv, q)
-	}
-	if err != nil {
-		return err
-	}
-	l, err := client.ClaimLogin(ctx, srv, code, verifier)
-	if err != nil {
-		return fmt.Errorf("login: %w", err)
+		verifier := rand.Text() + rand.Text()
+		q := url.Values{"challenge": {directory.PKCEChallenge(verifier)}, "name": {*name}}
+		var code string
+		if *noBrowser {
+			code, err = pasteCode(srv, q)
+		} else {
+			code, err = browserCode(ctx, srv, q)
+		}
+		if err != nil {
+			return err
+		}
+		if l, err = client.ClaimLogin(ctx, srv, code, verifier); err != nil {
+			return fmt.Errorf("login: %w", err)
+		}
 	}
 	if cfg.Server != "" && !sameServer(cfg.Server, srv) {
 		cfg.Tokens = nil
@@ -181,4 +192,26 @@ func whoami(ctx context.Context, args []string) error {
 	}
 	fmt.Printf("@%s (%s) on %s, in workspace %s (%s)\n", me.User.Handle, me.User.Email, c.Server, me.Key.Workspace, me.Key.Role)
 	return nil
+}
+
+// readPassword returns LAGRANGE_PASSWORD, or the first line of stdin (asking for it
+// when stdin is a terminal; it echoes, so prefer the variable or a pipe).
+func readPassword() (string, error) {
+	if p := os.Getenv("LAGRANGE_PASSWORD"); p != "" {
+		return p, nil
+	}
+	if f, ok := stdin.(*os.File); ok {
+		if st, err := f.Stat(); err == nil && st.Mode()&os.ModeCharDevice != 0 {
+			fmt.Print("Password (shown as you type; LAGRANGE_PASSWORD avoids that): ")
+		}
+	}
+	line, err := bufio.NewReader(stdin).ReadString('\n')
+	line = strings.TrimRight(line, "\r\n")
+	if line == "" {
+		if err != nil && !errors.Is(err, io.EOF) {
+			return "", err
+		}
+		return "", errors.New("login: no password (set LAGRANGE_PASSWORD or pipe it in)")
+	}
+	return line, nil
 }
