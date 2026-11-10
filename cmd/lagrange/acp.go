@@ -20,6 +20,8 @@ import (
 	"github.com/a2aproject/a2a-go/v2/a2aext/structuredinput"
 	"github.com/a2aproject/a2a-go/v2/a2asrv"
 	"github.com/a2aproject/a2a-go/v2/integrations/executor/a2aacp"
+
+	"github.com/three-agent-problem/lagrange/acp"
 )
 
 // acpOptions configures a coding agent served with tunnel --acp.
@@ -35,6 +37,7 @@ type acpOptions struct {
 	allow, deny    []string          // tool kinds answered without asking (--allow, --deny)
 	mcp            []json.RawMessage // MCP servers of every session (--mcp)
 	perContext     string            // "", "dir" or "worktree" (--per-context)
+	thoughts       bool              // stream the agent's thinking too (--thoughts)
 	sessionsDir    string            // where per-context folders go; defaults to the cache directory
 }
 
@@ -73,6 +76,7 @@ func acpFlags(fs *flag.FlagSet, o *acpOptions) {
 		o.mcp = append(o.mcp, raw)
 		return nil
 	})
+	fs.BoolVar(&o.thoughts, "thoughts", false, `With --acp: stream the agent's thinking into a "thoughts" artifact, so every client can follow it (each chunk is an activity entry).`)
 	fs.Func("per-context", `With --acp: give each conversation (A2A context) its own working directory: "dir" (an empty folder) or "worktree" (a git worktree of --dir on its own branch, lagrange/<context>).`, func(v string) error {
 		if v != "dir" && v != "worktree" && v != "none" {
 			return fmt.Errorf(`want "dir" or "worktree", got %q`, v)
@@ -140,11 +144,8 @@ func mcpServer(v string) (json.RawMessage, error) {
 
 // config builds the executor's configuration from the options.
 func (o *acpOptions) config() (*a2aacp.Config, error) {
-	if len(o.settings) == 0 && len(o.callerSettings) == 0 && len(o.allow) == 0 && len(o.deny) == 0 &&
-		len(o.mcp) == 0 && o.perContext == "" {
-		return nil, nil
-	}
-	cfg := &a2aacp.Config{}
+	// Tool call starts, outputs and usage reach the activity log (lagrange/acp).
+	cfg := &a2aacp.Config{Converter: acp.Converter(nil, acp.Options{Thoughts: o.thoughts})}
 	if len(o.allow) > 0 || len(o.deny) > 0 {
 		cfg.AutoAnswer = a2aacp.ToolRules{Allow: o.allow, Deny: o.deny}
 	}

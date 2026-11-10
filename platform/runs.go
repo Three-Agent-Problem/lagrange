@@ -48,6 +48,10 @@ type Run struct {
 	Archived bool `json:"archived,omitempty"`
 	// Hidden counts the run's tasks inside other workspaces, which this one doesn't see.
 	Hidden int `json:"hidden,omitempty"`
+	// Cost is what the run's agents reported spending on it (usage entries, see
+	// lagrange/acp), in Currency. Zero when no agent reports usage.
+	Cost     float64 `json:"cost,omitempty"`
+	Currency string  `json:"currency,omitempty"`
 }
 
 // RunDetail is everything recorded for a run.
@@ -150,6 +154,16 @@ func summarize(root *TaskView, tasks []*TaskView, entries []*activity.Entry) *Ru
 		}
 	}
 	for _, e := range entries {
+		if e.Kind == activity.KindUsage {
+			if d, ok := e.Data["costDelta"].(float64); ok {
+				r.Cost += d
+				if u, ok := e.Data["usage"].(map[string]any); ok {
+					if c, ok := u["cost"].(map[string]any); ok {
+						r.Currency, _ = c["currency"].(string)
+					}
+				}
+			}
+		}
 		r.Entries++
 		add(&r.Participants, e.Sender)
 		add(&r.Participants, e.Recipient)

@@ -144,6 +144,7 @@ export function Runs() {
                   <span className="text-[10.5px] text-muted">
                     {r.tasks > 1 ? `${r.tasks} tasks · ` : ''}
                     {r.entries} events
+                    {r.cost ? ` · ${money(r.cost, r.currency)}` : ''}
                     {r.hidden ? <span title="Tasks inside other workspaces, which this one doesn't see"> · +{r.hidden} elsewhere</span> : null}
                   </span>
                   {user && r.waiting.includes(user.handle) && <span className="ml-auto rounded-full bg-warn-soft px-1.5 py-0.5 text-[10px] font-bold text-warn">needs you</span>}
@@ -301,6 +302,7 @@ function RunView({ id, kind, name, onArchived }: { id: string; kind: (h: string)
             </div>
             <p className="mt-0.5 text-xs text-muted">
               {name(run.starter)} → {name(run.recipient)} · {new Date(start).toLocaleString()} · took {duration(split?.segments.length ? split.end - split.start : end - start)} · {steps.length} steps · {data.exchanges.length} HTTP exchanges
+              {run.cost ? ` · ${money(run.cost, run.currency)} spent by its agents` : ''}
               {run.waiting.length > 0 && <b className="text-warn"> · waiting for {run.waiting.map(name).join(', ')}</b>}
             </p>
             {!!run.hidden && (
@@ -630,4 +632,9 @@ function Traffic({ exchanges, stepOf, onStep }: { exchanges: Exchange[]; stepOf:
       </ol>
     </div>
   )
+}
+
+/** "$0.42", or "0.42 EUR" for another currency. */
+function money(amount: number, currency?: string): string {
+  return !currency || currency === 'USD' ? `$${amount.toFixed(2)}` : `${amount.toFixed(2)} ${currency}`
 }

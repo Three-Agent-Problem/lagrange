@@ -54,6 +54,11 @@ const (
 	// the task: {"kind": Failure*, "address": handle, "detail": text}. Failures an agent
 	// reports itself don't carry it.
 	FailureKey = "https://threeagents.dev/ext/delivery-failure/v1"
+	// TagsKey in a message's metadata holds the sender's tags for it, {"name": "value"}:
+	// short strings (up to 16, names up to 64 and values up to 256 characters) that the
+	// activity log records with the task, as data.tags of the entry that created it,
+	// so any client can group and label tasks (a subtask ID, a ticket, a customer).
+	TagsKey = "https://threeagents.dev/ext/tags/v1"
 
 	// AttrAnsweredBy, in the a2asrv.User attributes of an inbox answer, names the person
 	// answering on the task owner's behalf. Only the platform's own API sets it.

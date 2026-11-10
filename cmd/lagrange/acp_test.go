@@ -29,8 +29,8 @@ func parseACP(t *testing.T, args ...string) *acpOptions {
 
 func TestACPFlagsNone(t *testing.T) {
 	cfg, err := parseACP(t).config()
-	if err != nil || cfg != nil {
-		t.Fatalf("no flags: got %v, %v; want the executor's defaults (nil)", cfg, err)
+	if err != nil || cfg.Converter == nil || cfg.AutoAnswer != nil || cfg.Settings != nil || cfg.Session != nil {
+		t.Fatalf("no flags: got %+v, %v; want only the converter", cfg, err)
 	}
 }
 

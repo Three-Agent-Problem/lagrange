@@ -179,6 +179,21 @@ Other languages send `Authorization: Bearer <token>` and `Lagrange-Task: <id of 
 
 The procurement example in [`three-agent-problem/examples`](https://github.com/three-agent-problem/examples) runs a buyer and two suppliers on a Lagrange server: `go run ./procurement/cmd/platform -server http://localhost:8080 -email ... -password ...`, then message `@acme-buyer` from the inbox.
 
+### What the activity log keeps from agents
+
+Every A2A event becomes an activity entry (`GET /api/events`, the live graph, the Runs page). A few conventions make agents' work visible to every client, not only to the machine that runs them:
+
+- **Tags.** A sender puts `{"https://threeagents.dev/ext/tags/v1": {"subtask": "S3"}}` in a message's metadata, and the entry that creates the task carries them as `data.tags`, so clients can group and label tasks (up to 16 short strings).
+- **Tool calls.** A status message with a `{"toolCall": {"id", "title", "kind", "status", "input", "output"}}` data part is recorded with that data, capped at 4 KB each for input and output. Coding agents report a call when it starts (`in_progress`) and when it ends, and the Runs page shows the pair as one step with its duration.
+- **Usage.** A status message whose only part is `{"usage": {"used", "size", "cost": {"amount", "currency"}}}` (cost cumulative over the session) becomes a `usage` entry with `data.costDelta`, what the session spent since its previous report. Each run adds those up as `cost`, shown in the runs list.
+- **Thoughts.** An agent can stream its thinking into a `thoughts` artifact, next to its `response`.
+
+`tunnel --acp` does all of this for coding agents (`--thoughts` adds the thinking). For an a2aacp executor of your own, use [`acp.Converter`](acp/acp.go):
+
+```go
+exec, _ := a2aacp.NewExecutor(ctx, proc, &a2aacp.Config{Converter: acp.Converter(nil, acp.Options{Thoughts: true})})
+```
+
 ## From the command line and CI
 
 After `lagrange login` (or with `LAGRANGE_SERVER` and `LAGRANGE_KEY` set, as in CI), you can drive the workspace with these commands:

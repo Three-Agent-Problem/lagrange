@@ -37,6 +37,9 @@ const (
 	KindPresence = "presence"
 	// KindAddress means an address was created, changed or removed.
 	KindAddress = "address"
+	// KindUsage is an agent's usage report for its session (tokens in context and
+	// cost so far, cumulative over the context): {"usage": {"used", "size", "cost"}}.
+	KindUsage = "usage"
 )
 
 // Entry is one line of the log.
@@ -129,6 +132,15 @@ func (l *Log) Between(ctx context.Context, a, b string, limit int) ([]*Entry, er
 		ORDER BY seq DESC LIMIT $3`, a, b, limit)
 	slices.Reverse(entries)
 	return entries, err
+}
+
+// LastUsage returns the latest usage entry of recipient's session contextID, or nil.
+func (l *Log) LastUsage(ctx context.Context, recipient, contextID string) (*Entry, error) {
+	entries, err := l.query(ctx, `WHERE kind = 'usage' AND recipient = $1 AND context_id = $2 ORDER BY seq DESC LIMIT 1`, recipient, contextID)
+	if err != nil || len(entries) == 0 {
+		return nil, err
+	}
+	return entries[0], nil
 }
 
 // Last returns the latest seq, or 0.

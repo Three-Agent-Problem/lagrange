@@ -197,7 +197,7 @@ export type JSONSchema = {
 export type Entry = {
   seq: number
   at: string
-  kind: 'task' | 'artifact' | 'message' | 'input' | 'queued' | 'delivered' | 'presence' | 'address'
+  kind: 'task' | 'artifact' | 'message' | 'input' | 'queued' | 'delivered' | 'presence' | 'address' | 'usage'
   taskId?: string
   parentTaskId?: string
   contextId?: string
@@ -255,6 +255,9 @@ export type Run = {
   archived?: boolean
   /** Tasks of the run inside other workspaces, which this one doesn't see. */
   hidden?: number
+  /** What the run's agents reported spending on it, in `currency`. */
+  cost?: number
+  currency?: string
 }
 
 export type Answer = { text?: string; data?: Record<string, unknown>; decision?: 'reject' }

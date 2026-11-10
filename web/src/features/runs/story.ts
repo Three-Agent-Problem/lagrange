@@ -79,6 +79,18 @@ function parseObject(s: string): Record<string, unknown> | undefined {
 
 const str = (v: unknown) => (typeof v === 'string' ? v : undefined)
 
+type ToolCall = { id: string; title?: string; kind?: string; status?: string; output?: string }
+
+/** The tool call a task entry reports (data.toolCall, see lagrange/acp), if any. */
+export function toolCall(e: Entry): ToolCall | undefined {
+  const tc = e.data?.toolCall
+  if (!tc || typeof tc !== 'object') return undefined
+  const o = tc as Record<string, unknown>
+  const id = str(o.id)
+  if (!id) return undefined
+  return { id, title: str(o.title), kind: str(o.kind), status: str(o.status), output: str(o.output) }
+}
+
 export function story(run: Pick<RunDetail, 'entries' | 'exchanges'> & { tasks?: RunDetail['tasks'] }, name: Namer = defaultNamer): Story {
   who = (h) => (!h || h === OUTSIDE ? defaultNamer(h) : name(h))
   try {
@@ -96,6 +108,8 @@ function tell(run: Pick<RunDetail, 'entries' | 'exchanges'> & { tasks?: RunDetai
   const queuedStep = new Map<string, Step>()
   const lastOf = new Map<string, Step>()
   const human = new Set((run.tasks ?? []).filter((t) => t.awaiting && t.awaiting === t.recipient).map((t) => t.recipient))
+  // A coding agent's tool call (lagrange/acp) is one step from its start to its end.
+  const toolStep = new Map<string, Step>()
 
   const push = (s: Omit<Step, 'n' | 'updates' | 'pushes' | 'exchanges'> & Partial<Pick<Step, 'updates'>>) => {
     const step: Step = { updates: [], pushes: [], exchanges: [], ...s, n: steps.length + 1 }
@@ -161,6 +175,21 @@ function tell(run: Pick<RunDetail, 'entries' | 'exchanges'> & { tasks?: RunDetai
     const first = !!tid && !seen.has(tid)
     if (tid) seen.add(tid)
     const text = content(e.summary)
+    const call = toolCall(e)
+    if (call && tid && !first) {
+      const key = `${tid} ${call.id}`
+      const open = toolStep.get(key)
+      if (open) {
+        open.entries.push(e)
+        open.body = content(call.output ? `${e.summary ?? ''}\n${call.output}` : e.summary)
+        open.title = `${who(recipient)} · ${call.title || call.kind || 'tool'} (${seconds(at - open.at)})`
+        if (call.status !== 'in_progress') toolStep.delete(key)
+        continue
+      }
+      const step = push({ at, kind: 'progress', from: recipient, taskId: tid, state, title: `${who(recipient)} · ${call.title || call.kind || 'tool'}`, body: text, entries: [e] })
+      if (call.status === 'in_progress') toolStep.set(key, step)
+      continue
+    }
     if (first) {
       push({ at, kind: 'ask', from: sender, to: recipient, taskId: tid, state, title: `${who(sender)} asked ${who(recipient)}`, body: text, entries: [e] })
       continue

@@ -88,6 +88,7 @@ func (p *Platform) conversations(ctx context.Context, s *scope) ([]*Conversation
 	// The latest thing each side said: a task's question or answer, or a message.
 	rows, err = p.DB.Pool.Query(ctx, `SELECT DISTINCT ON (sender, recipient) sender, recipient, at, summary, coalesce(data->>'reply', '')
 		FROM activity WHERE kind IN ('task', 'message', 'input') AND recipient <> '' AND summary <> '' AND (sender = ANY($1) OR recipient = ANY($1))
+		AND NOT coalesce(data ? 'toolCall', false)
 		ORDER BY sender, recipient, seq DESC`, s.handles)
 	if err != nil {
 		return nil, err

@@ -106,6 +106,8 @@ export function fromView(t: TaskView): TaskNode {
 /** Folds one entry into the model. It returns a new model and never mutates its input. */
 export function reduce(m: Model, e: Entry): Model {
   if (e.seq <= m.seq) return m
+  // Usage reports are bookkeeping, not traffic: they stay off the graph and the feed.
+  if (e.kind === 'usage') return { ...m, seq: e.seq }
   const at = ms(e.at)
   const next: Model = { ...m, seq: e.seq, now: Math.max(m.now, at), feed: [...m.feed, e].slice(-FEED_MAX) }
   switch (e.kind) {

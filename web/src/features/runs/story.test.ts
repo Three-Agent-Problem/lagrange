@@ -88,3 +88,31 @@ describe('pretty', () => {
     expect(pretty('plain')).toBe('plain')
   })
 })
+
+describe('tool calls', () => {
+  const at = (s: number) => new Date(Date.UTC(2026, 10, 10, 9, 0, s)).toISOString()
+  const base = { taskId: 't1', sender: 'lead', recipient: 'coder', contextId: 'c1' }
+  const tool = (seq: number, s: number, status: string, summary: string, output?: string) => ({
+    ...base, seq, at: at(s), kind: 'task' as const, state: 'TASK_STATE_WORKING', summary,
+    data: { toolCall: { id: 'call-1', title: 'go test ./...', kind: 'execute', status, ...(output ? { output } : {}) } },
+  })
+  const detail = {
+    entries: [
+      { ...base, seq: 1, at: at(0), kind: 'task' as const, state: 'TASK_STATE_SUBMITTED', summary: 'run the tests' },
+      tool(2, 1, 'in_progress', 'Running go test ./...'),
+      { ...base, seq: 3, at: at(2), kind: 'usage' as const, summary: 'usage: $0.10', data: { usage: { cost: { amount: 0.1, currency: 'USD' } } } },
+      tool(4, 13, 'completed', 'Finished go test ./...', 'ok ./store'),
+      { ...base, seq: 5, at: at(14), kind: 'task' as const, state: 'TASK_STATE_COMPLETED', summary: 'all green' },
+    ],
+    exchanges: [],
+  } as unknown as RunDetail
+
+  it('makes one step of a call, with how long it took and its output', () => {
+    const s = story(detail)
+    expect(s.steps.map((st) => st.kind)).toEqual(['ask', 'progress', 'done'])
+    const call = s.steps[1]
+    expect(call.title).toBe('@coder · go test ./... (12s)')
+    expect(call.body?.text).toBe('Finished go test ./...\nok ./store')
+    expect(call.entries.map((e) => e.seq)).toEqual([2, 4])
+  })
+})

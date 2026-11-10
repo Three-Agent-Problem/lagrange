@@ -3,11 +3,14 @@ package relay
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/a2aproject/a2a-go/v2/a2a"
 	"github.com/a2aproject/a2a-go/v2/a2asrv"
 
+	"github.com/three-agent-problem/lagrange/acp"
 	"github.com/three-agent-problem/lagrange/activity"
 	"github.com/three-agent-problem/lagrange/directory"
 )
@@ -67,6 +70,9 @@ func (rec *recorder) input(m *a2a.Message, who string) {
 	if c := Preview(m.Parts, 4096); c != "" {
 		e.Data["content"] = c
 	}
+	if t := Tags(m); t != nil {
+		e.Data["tags"] = t
+	}
 	rec.add(e)
 }
 
@@ -94,20 +100,41 @@ func (rec *recorder) record(ev a2a.Event) {
 		e := rec.entry(activity.KindTask)
 		e.State = string(ev.Status.State)
 		e.Summary = Describe(rec.ec.Message)
+		if t := Tags(rec.ec.Message); t != nil {
+			e.Data = map[string]any{"tags": t}
+		}
 		rec.add(e)
 		rec.waiting(e, ev.Status.Message)
 
 	case *a2a.TaskStatusUpdateEvent:
+		if u := usageOf(ev.Status.Message); u != nil {
+			// A usage report (lagrange/acp): its own kind, so it isn't a step.
+			e := rec.entry(activity.KindUsage)
+			e.Summary = usageSummary(u)
+			e.Data = map[string]any{"usage": u}
+			if d, ok := rec.costDelta(u); ok {
+				e.Data["costDelta"] = d
+			}
+			rec.add(e)
+			return
+		}
 		e := rec.entry(activity.KindTask)
 		e.State = string(ev.Status.State)
 		e.Summary = Describe(ev.Status.Message)
+		data := map[string]any{}
 		if h, ok := ev.Metadata[AwaitingKey].(string); ok {
-			e.Data = map[string]any{"awaiting": h}
+			data["awaiting"] = h
 		}
-		if ev.Status.Message != nil {
-			if by, ok := ev.Status.Message.Metadata[AnsweredByKey].(string); ok {
-				e.Data = map[string]any{"answeredBy": by}
+		if m := ev.Status.Message; m != nil {
+			if by, ok := m.Metadata[AnsweredByKey].(string); ok {
+				data["answeredBy"] = by
 			}
+			if tc, ok := acp.Find(m.Parts, acp.ToolCallKey).(map[string]any); ok {
+				data["toolCall"] = capToolCall(tc)
+			}
+		}
+		if len(data) > 0 {
+			e.Data = data
 		}
 		rec.add(e)
 		question := ev.Status.Message
@@ -138,6 +165,9 @@ func (rec *recorder) record(ev a2a.Event) {
 		}
 		if c := Preview(ev.Parts, 4096); c != "" {
 			e.Data["replyContent"] = c
+		}
+		if t := Tags(rec.ec.Message); t != nil {
+			e.Data["tags"] = t
 		}
 		rec.add(e)
 	}
@@ -201,3 +231,121 @@ func Preview(parts []*a2a.Part, n int) string {
 	}
 	return s
 }
+
+// usageOf returns the usage report of a status message that carries only that, or nil.
+func usageOf(m *a2a.Message) map[string]any {
+	if m == nil || len(m.Parts) != 1 {
+		return nil
+	}
+	u, _ := acp.Find(m.Parts, acp.UsageKey).(map[string]any)
+	if _, ok := acp.ParseUsage(u); !ok {
+		return nil
+	}
+	return u
+}
+
+// usageSummary says a usage report in a few words: "$0.42 · 26% of context".
+func usageSummary(v map[string]any) string {
+	u, _ := acp.ParseUsage(v)
+	var parts []string
+	if u.Cost != nil {
+		if u.Cost.Currency == "" || u.Cost.Currency == "USD" {
+			parts = append(parts, fmt.Sprintf("$%.2f", u.Cost.Amount))
+		} else {
+			parts = append(parts, fmt.Sprintf("%.2f %s", u.Cost.Amount, u.Cost.Currency))
+		}
+	}
+	if u.Size > 0 {
+		parts = append(parts, fmt.Sprintf("%d%% of context", u.Used*100/u.Size))
+	} else if u.Used > 0 {
+		parts = append(parts, fmt.Sprintf("%d tokens", u.Used))
+	}
+	return "usage: " + strings.Join(parts, " · ")
+}
+
+// maxToolField caps a tool call's input and output in the activity log.
+const maxToolField = 4096
+
+// capToolCall returns tc with its input and output cut to what the log keeps.
+func capToolCall(tc map[string]any) map[string]any {
+	out := make(map[string]any, len(tc))
+	for k, v := range tc {
+		out[k] = v
+	}
+	if s, ok := out["output"].(string); ok && len(s) > maxToolField {
+		out["output"] = "…" + s[len(s)-maxToolField:]
+	}
+	if in, ok := out["input"]; ok {
+		if raw, err := json.Marshal(in); err == nil && len(raw) > maxToolField {
+			out["input"] = string(raw[:maxToolField]) + "…"
+		}
+	}
+	return out
+}
+
+// costDelta is how much the session cost since its previous usage report: costs are
+// cumulative per session, and a session can span runs.
+func (rec *recorder) costDelta(v map[string]any) (float64, bool) {
+	u, _ := acp.ParseUsage(v)
+	if u.Cost == nil {
+		return 0, false
+	}
+	delta := u.Cost.Amount
+	prev, err := rec.r.Activity.LastUsage(rec.ctx, rec.addr.Handle, rec.ec.ContextID)
+	if err != nil {
+		rec.r.log().Warn("relay: reading the last usage report failed", "error", err)
+		return 0, false
+	}
+	if prev != nil {
+		if p, ok := acp.ParseUsage(prev.Data["usage"]); ok && p.Cost != nil && p.Cost.Currency == u.Cost.Currency && p.Cost.Amount <= u.Cost.Amount {
+			delta -= p.Cost.Amount
+		}
+	}
+	return delta, true
+}
+
+// Tags returns the tags of a message (TagsKey in its metadata), cut to the limits the
+// activity log keeps, or nil. Values that aren't strings are written as JSON.
+func Tags(m *a2a.Message) map[string]string {
+	if m == nil {
+		return nil
+	}
+	raw, ok := m.Metadata[TagsKey].(map[string]any)
+	if !ok || len(raw) == 0 {
+		return nil
+	}
+	keys := make([]string, 0, len(raw))
+	for k := range raw {
+		keys = append(keys, k)
+	}
+	slices.Sort(keys)
+	out := map[string]string{}
+	for _, k := range keys {
+		if len(out) == maxTags {
+			break
+		}
+		if k == "" || len([]rune(k)) > 64 {
+			continue
+		}
+		var v string
+		switch x := raw[k].(type) {
+		case string:
+			v = x
+		case nil:
+			continue
+		default:
+			b, _ := json.Marshal(x)
+			v = string(b)
+		}
+		if r := []rune(v); len(r) > 256 {
+			v = string(r[:255]) + "…"
+		}
+		out[k] = v
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+const maxTags = 16
