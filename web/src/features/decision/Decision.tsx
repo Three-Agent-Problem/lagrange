@@ -76,7 +76,7 @@ function Question({ view, token, onSent }: { view: DecisionView; token: string; 
         ))}
       </div>
       {state === 'input_required' ? (
-        <AnswerForm taskId={t.id} mode={forPerson ? 'person' : 'sender'} schema={t.input?.schema} send={(a) => api.answerDecision(token, a)} onDone={onSent} />
+        <AnswerForm taskId={t.id} mode={forPerson ? 'person' : 'sender'} schema={t.input?.schema} questions={t.questions} approval={t.approval} send={(a) => api.answerDecision(token, a)} onDone={onSent} />
       ) : state === 'auth_required' && t.challenge ? (
         <a href={t.challenge.url} target="_blank" rel="noreferrer" className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-accent px-3 py-2 text-sm font-bold text-accent-ink shadow-card">
           Connect {t.challenge.integration} <ExternalLink size={14} />

@@ -24,6 +24,7 @@ import (
 	"github.com/three-agent-problem/registry/lint"
 
 	"github.com/three-agent-problem/lagrange/activity"
+	"github.com/three-agent-problem/lagrange/ask"
 	"github.com/three-agent-problem/lagrange/credentials"
 	"github.com/three-agent-problem/lagrange/directory"
 	"github.com/three-agent-problem/lagrange/mailbox"
@@ -41,6 +42,7 @@ func (p *Platform) api(mux *http.ServeMux) {
 	p.workspaceRoutes(mux)
 	p.accessRoutes(mux)
 	p.profileRoutes(mux)
+	p.telegramRoutes(mux)
 	mux.Handle("GET /api/users", p.in(directory.RoleViewer, p.handleUsers))
 	mux.Handle("POST /api/users", p.in(directory.RoleAdmin, p.handleCreateUser))
 	mux.Handle("GET /api/addresses", p.in(directory.RoleViewer, p.handleAddresses))
@@ -410,6 +412,10 @@ type TaskView struct {
 	Task      *a2a.Task              `json:"task,omitempty"`
 	Input     *InputView             `json:"input,omitempty"`
 	Challenge *credentials.Challenge `json:"challenge,omitempty"`
+	// Questions are the multiple-choice questions the task asks (lagrange/ask), and
+	// Approval says it asks to approve or reject; both only while it waits for input.
+	Questions []ask.Question `json:"questions,omitempty"`
+	Approval  bool           `json:"approval,omitempty"`
 }
 
 // InputView is a structured input request, for rendering a form.
@@ -468,6 +474,12 @@ func fillTaskView(v *TaskView, task *a2a.Task) {
 		}
 		if ch, ok := credentials.ChallengeFromMessage(msg); ok {
 			v.Challenge = ch
+		}
+		if task.Status.State == a2a.TaskStateInputRequired {
+			if q := questionOf(task, v.Awaiting != ""); q != nil {
+				v.Questions = ask.Parse(q.Metadata)
+				v.Approval = ask.IsApproval(q.Metadata)
+			}
 		}
 	}
 	if n := len(task.Artifacts); v.Status == "" && n > 0 && task.Status.State.Terminal() {
@@ -739,16 +751,15 @@ func (p *Platform) answer(ctx context.Context, me *directory.User, s *scope, id 
 	return 0, nil
 }
 
-// decisionData is the answer an approve or reject decision gives to a form whose only
-// field is a boolean ({"approved": true}), or nil when the form asks for more.
+// decisionData is the answer an approve or reject decision gives to an approval form
+// (one boolean field, the others optional: see ask.ApprovalField), or nil when the
+// form asks for more.
 func decisionData(schema *jsonschema.Schema, decision string) map[string]any {
-	if schema == nil || (decision != "approve" && decision != "reject") || len(schema.Properties) != 1 {
+	if decision != "approve" && decision != "reject" {
 		return nil
 	}
-	for name, prop := range schema.Properties {
-		if prop != nil && prop.Type == "boolean" {
-			return map[string]any{name: decision == "approve"}
-		}
+	if field, ok := ask.ApprovalField(schema); ok {
+		return map[string]any{field: decision == "approve"}
 	}
 	return nil
 }

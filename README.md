@@ -23,7 +23,7 @@ A Lagrange point is where a body can hold still between two others. Lagrange is 
 - **Coding agents as addresses.** `lagrange tunnel --acp claude-agent-acp` turns any [Agent Client Protocol](https://agentclientprotocol.com) agent (Claude Code, Gemini CLI, opencode, Codex) into an A2A agent. Its "may I run this?" prompts land in your inbox, or flags set it up to work alone: a model, tool rules, MCP servers, and a git worktree per conversation.
 - **Anything else as an address.** `--exec "<cmd>"` makes any script an agent, and `--http <url>` makes any webhook one (an n8n, Zapier or Make workflow, a FastAPI route). They get the message as text or JSON and can ask the sender a question back.
 - **People in the loop.** A task sent to a person waits as `INPUT_REQUIRED` in their inbox. When an agent asks its sender a question (with a [structured input](https://github.com/a2aproject/a2a-go/tree/main/a2aext/structuredinput) schema, it becomes a form) the question shows up in the sender's inbox and on the graph, and is answered right there.
-- **Questions reach people where they are.** When a task waits on someone, they get an email (with `LAGRANGE_SMTP_URL`) and/or a Slack message (their own incoming webhook, set in Settings) with the question in plain words and a one-time link. The link opens just that question, on a phone too, and answers it as them without logging in; it works once and expires after 7 days.
+- **Questions reach people where they are.** When a task waits on someone, they get an email (with `LAGRANGE_SMTP_URL`) and/or a Slack message (their own incoming webhook, set in Settings) with the question in plain words and a one-time link. The link opens just that question, on a phone too, and answers it as them without logging in; it works once and expires after 7 days. People can also connect **their own Telegram bot**, which answers approvals and multiple-choice questions with buttons and reports their runs (see [Telegram](#telegram)).
 - **Nothing waits forever.** The Waiting page lists every task blocked on someone, grouped by who and oldest first. An admin sets the team's rules: remind the person after a delay (up to 3 times), escalate to a backup who can answer in their place (by email link or right on the board, recorded as the backup's answer), and cancel the task after a longer one. Anyone can send a reminder by hand.
 - **Durable.** The platform owns every task: it stores tasks and events in Postgres and forwards the work to the agent. Work survives server restarts (a2a-go cluster mode on a Postgres work queue with leases) and agent restarts.
 - **A live view.** The web app shows addresses as nodes and tasks as moving packets on the edges between them, with mailbox depth, workers and waiting questions. Beside it, the activity panel sums up each run in one line (who asked whom, and how it ended: "PO-E452BE: 200 hoodies from Northwind Merch for 5416.00 EUR, approved by ada"), with a digest of the last hour on top. A click opens the run's steps right there; **All events** lists every event, and a click shows what it carried and where it sits in its run.
@@ -42,8 +42,10 @@ A Lagrange point is where a body can hold still between two others. Lagrange is 
 | Agents: addresses, tunnels, workers, capacity, tokens. | The directory: people and agents, each with a card. |
 | ![Run summaries on the live graph](docs/screenshots/live-summary.png) | ![One event, in place](docs/screenshots/live-event.png) |
 | Each run summed up in one line; a click opens its steps in place. | All events: a click shows what the event carried and its run, with that step marked. |
-| ![Between agents](docs/screenshots/inbox-between.png) | |
-| The buyer and Northwind's conversation: quote requests and quotes. | |
+| ![Between agents](docs/screenshots/inbox-between.png) | ![A run's report card](docs/screenshots/runs-report.png) |
+| The buyer and Northwind's conversation: quote requests and quotes. | A run's report: what it built and its stats, copied as Markdown with one click. |
+| ![Telegram in Settings](docs/screenshots/settings-telegram.png) | |
+| Settings → Telegram: your own bot, answering with buttons only. | |
 | ![The waiting board](docs/screenshots/waiting.png) | ![Answering an escalation](docs/screenshots/waiting-escalated.png) |
 | Waiting: an approval Ada hasn't answered, reminded and escalated to Bob by the team's rules. | Bob answers in Ada's place, right on the board. |
 | ![Dark live graph](docs/screenshots/live-graph-dark.png) | ![Dark runs](docs/screenshots/runs-dark.png) |
@@ -199,6 +201,7 @@ Every A2A event becomes an activity entry (`GET /api/events`, the live graph, th
 - **Tool calls.** A status message with a `{"toolCall": {"id", "title", "kind", "status", "input", "output"}}` data part is recorded with that data, capped at 4 KB each for input and output. Coding agents report a call when it starts (`in_progress`) and when it ends, and the Runs page shows the pair as one step with its duration.
 - **Usage.** A status message whose only part is `{"usage": {"used", "size", "cost": {"amount", "currency"}}}` (cost cumulative over the session) becomes a `usage` entry with `data.costDelta`, what the session spent since its previous report. Each run adds those up as `cost`, shown in the runs list.
 - **Thoughts.** An agent can stream its thinking into a `thoughts` artifact, next to its `response`.
+- **Reports.** An artifact named `report` (ID `report`) with a `{"https://threeagents.dev/ext/report": {"headline", "status", "progress": {"done", "total"}, "built": [{"title", "detail"}], "stats": [{"label", "value"}], "outcome", "notice"}}` data part is the run's situation report; each one replaces the last. It is recorded as `data.report`, every run carries its latest one as `report`, and the Runs page shows it with a "Copy" button (Markdown). Set `outcome` on the final one. A report with a `notice` is forwarded to whoever started the run (Telegram); a final one sends them the finished-run card. In Go: [`report.Report{...}.Event(ec)`](report/report.go).
 - **Commits.** An artifact named `commit` with a `{"commit": {"sha", "branch", "subject", "body", "author", "at", "files": [{"path", "insertions", "deletions"}], "insertions", "deletions"}}` data part, plus the patch as a `text/x-diff` text part, is recorded as "commit 3f2a1c9 fix the tests (+4 −1)" with `data.commit`; the patch (up to 256 KB) stays in the task, for `GET /api/tasks/{id}`. The Runs page shows it as "@coder committed …" with its files.
 
 Together these are an agent's transcript: what it was asked, the tools it ran (with their output), what it thought, what it said and what it committed, readable from any client after the fact.
@@ -241,6 +244,25 @@ lagrange runs -q PO-123                          # search runs; lagrange run <id
 - run: lagrange send @cfo "Deploy ${{ github.sha }} to prod?" --wait --timeout 4h
   env: { LAGRANGE_SERVER: https://lagrange.example.com, LAGRANGE_KEY: ${{ secrets.LAGRANGE_KEY }} }
 ```
+
+## Telegram
+
+Each person can connect their own Telegram bot in **Settings → Telegram** (or from [Halo](https://github.com/three-agent-problem/halo) with `halo connections`). It's one bot per person, made in two minutes with @BotFather, and it long-polls, so the server needs no public URL.
+
+1. In @BotFather, `/newbot`, then paste the token in Settings. The server checks it with Telegram and never shows it again.
+2. Tap **Open @your_bot** and **Start**. The link carries a one-time pairing code (10 minutes, five wrong guesses kill it), which binds the bot to your private chat and your Telegram account.
+
+From then on, what waits on you arrives there too, next to email and Slack, with reminders and escalations:
+
+| The task asks | In Telegram |
+|---|---|
+| to approve (an `ask.ApprovalKey` message, or a structured form whose only required field is a boolean) | **Approve** (it asks again: "Yes, approve") or **Reject** |
+| multiple-choice questions ([`ask`](ask/ask.go)) | the options as buttons (✓ toggles for multi-select), then **Send answers** |
+| anything else (free text, a larger form, an account to connect) | the question, and a pointer to the inbox |
+
+When the task is answered anywhere else, the message says so and its buttons go away. With the level at *milestones* (the default), the bot also sends report notices and a card when a run you started finishes: its report, cost and time. `/status`, `/waiting`, `/runs`, `/mute 2h` and `/unmute` read things back.
+
+What it can't do is the point. The bot listens to one private chat and one Telegram user. It answers only tasks that wait on you, and only with buttons; it never starts, cancels or messages anything, and typed text goes nowhere (it gets a fixed reply). Buttons carry random tokens that name a row on the server, never a task. An answer goes through the same checks as the inbox, and only the press that closes the message counts, so a double tap answers once. Everything the bot can reach is [`telegram.Deps`](telegram/service.go): one answer function and three reads. Messages hold questions, run titles and reports, never diffs or tool output. The token only goes to `api.telegram.org` and is kept out of errors and logs. Like Slack webhooks, it is stored in the database as is.
 
 ## Webhooks
 
@@ -438,6 +460,9 @@ These are metadata keys under this project's namespace. Agents that don't know t
 | `https://threeagents.dev/ext/credential-challenge/v1` | data part metadata | marks the part `{id, integration, url, expiresAt}` of an `AUTH_REQUIRED` message |
 | `https://threeagents.dev/ext/answered-by/v1` | message metadata | who answered from the inbox (the logged-in person on the platform; self-reported in the legacy console) |
 | `https://threeagents.dev/ext/awaiting/v1` | status and status-message metadata | the handle of the person a waiting task waits for |
+| `https://threeagents.dev/ext/questions` | message metadata | multiple-choice questions for a person ([`ask`](ask/ask.go)); the answer is a text message, one `Header: picks` line per question |
+| `https://threeagents.dev/ext/approval` | message metadata | `true`: the message asks to approve or reject (answer with the decision `approve` or `reject`) |
+| `https://threeagents.dev/ext/report` | data part key, in a `report` artifact | a run's situation report ([`report`](report/report.go)) |
 
 And two HTTP headers (gRPC metadata) that agents on the platform send with their calls:
 

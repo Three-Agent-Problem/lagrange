@@ -40,6 +40,7 @@ import (
 	"github.com/three-agent-problem/lagrange/notify"
 	"github.com/three-agent-problem/lagrange/pg"
 	"github.com/three-agent-problem/lagrange/relay"
+	"github.com/three-agent-problem/lagrange/telegram"
 	"github.com/three-agent-problem/lagrange/tunnel"
 	"github.com/three-agent-problem/lagrange/webhook"
 )
@@ -88,6 +89,11 @@ type Config struct {
 	// TrustProxy: the server runs behind a reverse proxy, so the client address is the
 	// last X-Forwarded-For entry (for rate limits).
 	TrustProxy bool
+	// TelegramAPIBase replaces https://api.telegram.org for every bot. Tests only.
+	TelegramAPIBase string
+	// TelegramTick is how often Telegram follows the activity log (default 1s), and
+	// TelegramPoll the bots' long-poll timeout (default 50s).
+	TelegramTick, TelegramPoll time.Duration
 	// AuthRateLimit is how many login, signup and link requests a client may make per
 	// minute (default 30; negative: no limit).
 	AuthRateLimit int
@@ -107,6 +113,7 @@ type Platform struct {
 	Relay     *relay.Relay
 	Notify    *notify.Notifier
 	Webhooks  *webhook.Dispatcher
+	Telegram  *telegram.Service
 	// A2A is the a2a-go request handler that serves every address.
 	A2A     a2asrv.RequestHandler
 	Tunnels *tunnel.Server
@@ -166,7 +173,11 @@ func New(ctx context.Context, cfg Config) (*Platform, error) {
 		}})
 	}
 	p.queue = pg.NewWorkQueueBackend(db, cfg.WorkerID, cfg.Queue)
-	p.Notify = &notify.Notifier{Directory: p.Directory, PublicURL: cfg.PublicURL, Email: cfg.Email, Logger: log}
+	p.Telegram = &telegram.Service{
+		DB: db, Directory: p.Directory, Activity: p.Activity, PublicURL: cfg.PublicURL, Deps: p.telegramDeps(), Logger: log,
+		APIBase: cfg.TelegramAPIBase, Tick: cfg.TelegramTick, PollTimeout: cfg.TelegramPoll,
+	}
+	p.Notify = &notify.Notifier{Directory: p.Directory, PublicURL: cfg.PublicURL, Email: cfg.Email, Channels: []notify.Channel{p.Telegram}, Logger: log}
 	p.Relay = &relay.Relay{Directory: p.Directory, Links: p.Links, Activity: p.Activity, Mailbox: p.Mailbox, OnWaiting: p.onWaiting, Logger: log}
 	handler := a2asrv.NewHandler(p.Relay,
 		a2asrv.WithClusterMode(a2asrv.ClusterConfig{
@@ -224,6 +235,7 @@ func New(ctx context.Context, cfg Config) (*Platform, error) {
 		cfg.WebhookTick = time.Second
 	}
 	go p.Webhooks.Run(bg, cfg.WebhookTick)
+	go p.Telegram.Run(bg)
 	if p.seed = newSeeder(cfg, log); p.seed != nil {
 		// A server with no agents yet gets the scripted requests too.
 		var empty bool

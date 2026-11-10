@@ -67,6 +67,16 @@ func (m *Message) Text() string {
 	return b.String()
 }
 
+// Channel is a notification channel of its own, such as a person's Telegram bot. It
+// decides for itself whether a person has it on, and gets no decision link: a channel
+// that answers does so through its own, narrower path.
+type Channel interface {
+	// Notice sends nt to u, if u has the channel on; sent says whether it did.
+	Notice(ctx context.Context, u *directory.User, nt Notice) (sent bool, err error)
+	// Test sends a test message to u, if u has the channel on.
+	Test(ctx context.Context, u *directory.User) (sent bool, err error)
+}
+
 // Notifier sends notifications. Its zero channels are off: without Email it sends no
 // email, and Slack is per person (NotificationSettings.SlackWebhook).
 type Notifier struct {
@@ -74,6 +84,8 @@ type Notifier struct {
 	// PublicURL is the server's base URL, for links.
 	PublicURL string
 	Email     Email
+	// Channels are the other channels (Telegram).
+	Channels []Channel
 	// HTTP posts to Slack (default: a client with a 10s timeout).
 	HTTP   *http.Client
 	Logger *slog.Logger
@@ -154,10 +166,16 @@ func (n *Notifier) Notify(ctx context.Context, nt Notice) error {
 	if err != nil {
 		return err
 	}
+	var errs []error
+	for _, c := range n.Channels {
+		if _, err := c.Notice(ctx, u, nt); err != nil {
+			errs = append(errs, err)
+		}
+	}
 	email := n.Email != nil && s.Email && u.Email != ""
 	if !email && s.SlackWebhook == "" {
-		n.log().Debug("notify: no channel; the task waits in the inbox", "to", who, "task", taskID)
-		return nil
+		n.log().Debug("notify: no email or Slack", "to", who, "task", taskID)
+		return errors.Join(errs...)
 	}
 	token, err := n.Directory.MintDecisionLink(ctx, taskID, who, LinkTTL)
 	if err != nil {
@@ -182,7 +200,6 @@ func (n *Notifier) Notify(ctx context.Context, nt Notice) error {
 		m.Intro = fmt.Sprintf("@%s hasn't answered for %s, so this comes to you. You can answer on their behalf.", nt.For, Ago(nt.Waited))
 		m.Of = nt.For
 	}
-	var errs []error
 	if email {
 		errs = append(errs, n.Email.Send(ctx, u.Email, m.Subject, m.Text()))
 	}
@@ -201,6 +218,13 @@ func (n *Notifier) Test(ctx context.Context, u *directory.User) error {
 	m := &Message{Subject: "Lagrange notifications work", Asker: "lagrange", Question: "This is a test. Questions for you will arrive here.", Inbox: n.PublicURL + "/inbox"}
 	var errs []error
 	sent := false
+	for _, c := range n.Channels {
+		ok, err := c.Test(ctx, u)
+		sent = sent || ok
+		if err != nil {
+			errs = append(errs, err)
+		}
+	}
 	if n.Email != nil && s.Email {
 		sent = true
 		errs = append(errs, n.Email.Send(ctx, u.Email, m.Subject, m.Text()))

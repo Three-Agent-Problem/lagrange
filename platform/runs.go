@@ -14,6 +14,7 @@ import (
 
 	"github.com/three-agent-problem/lagrange/activity"
 	"github.com/three-agent-problem/lagrange/directory"
+	"github.com/three-agent-problem/lagrange/report"
 )
 
 // A run is one major action, the unit people follow: a task nobody delegated (say "Order
@@ -55,6 +56,8 @@ type Run struct {
 	// lagrange/acp), in Currency. Zero when no agent reports usage.
 	Cost     float64 `json:"cost,omitempty"`
 	Currency string  `json:"currency,omitempty"`
+	// Report is the latest situation report the root task published (lagrange/report).
+	Report *report.Report `json:"report,omitempty"`
 }
 
 // RunDetail is everything recorded for a run.
@@ -167,6 +170,11 @@ func summarize(root *TaskView, tasks []*TaskView, entries []*activity.Entry) *Ru
 				}
 			}
 		}
+		if e.Kind == activity.KindArtifact && e.TaskID == r.ID {
+			if rep, ok := report.FromMap(e.Data["report"]); ok {
+				r.Report = &rep
+			}
+		}
 		r.Entries++
 		add(&r.Participants, e.Sender)
 		add(&r.Participants, e.Recipient)
@@ -220,82 +228,10 @@ func (p *Platform) handleRuns(w http.ResponseWriter, r *http.Request, me *direct
 	if limit <= 0 || limit > 500 {
 		limit = 100
 	}
-	rows, err := p.DB.Pool.Query(ctx, rootsSQL, s.handles, limit*2)
+	runs, err := p.runsOf(ctx, s, limit)
 	if err != nil {
 		apiError(w, http.StatusInternalServerError, err.Error())
 		return
-	}
-	var roots []string
-	for rows.Next() {
-		var id string
-		if err := rows.Scan(&id); err == nil {
-			roots = append(roots, id)
-		}
-	}
-	rows.Close()
-
-	runs := []*Run{}
-	if len(roots) > 0 {
-		trees, err := p.runTrees(ctx, roots)
-		if err != nil {
-			apiError(w, http.StatusInternalServerError, err.Error())
-			return
-		}
-		var all []string
-		owner := map[string]string{}
-		for root, ids := range trees {
-			all = append(all, ids...)
-			for _, id := range ids {
-				owner[id] = root
-			}
-		}
-		views, err := p.queryTasks(ctx, false, `WHERE t.id = ANY($1)`, all)
-		if err != nil {
-			apiError(w, http.StatusInternalServerError, err.Error())
-			return
-		}
-		entries, err := p.Activity.Run(ctx, all)
-		if err != nil {
-			apiError(w, http.StatusInternalServerError, err.Error())
-			return
-		}
-		tasksOf, entriesOf, hidden := map[string][]*TaskView{}, map[string][]*activity.Entry{}, map[string]int{}
-		for _, v := range views {
-			root := owner[string(v.ID)]
-			if !s.task(v) {
-				hidden[root]++
-				continue
-			}
-			tasksOf[root] = append(tasksOf[root], v)
-		}
-		for _, e := range entries {
-			if !s.entry(e) {
-				continue
-			}
-			root := owner[e.TaskID]
-			if root == "" {
-				root = owner[e.ParentTaskID]
-			}
-			entriesOf[root] = append(entriesOf[root], e)
-		}
-		for _, root := range roots {
-			ts := tasksOf[root]
-			i := slices.IndexFunc(ts, func(v *TaskView) bool { return string(v.ID) == root })
-			if i < 0 {
-				continue
-			}
-			run := summarize(ts[i], ts, entriesOf[root])
-			run.Hidden = hidden[root]
-			runs = append(runs, run)
-		}
-	}
-	messages, err := p.Activity.Messages(ctx, s.handles, limit)
-	if err != nil {
-		apiError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-	for _, e := range messages {
-		runs = append(runs, messageRun(e))
 	}
 
 	archived, err := p.archivedRuns(ctx, s)
@@ -329,6 +265,85 @@ func (p *Platform) handleRuns(w http.ResponseWriter, r *http.Request, me *direct
 		runs = runs[:limit]
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"runs": runs})
+}
+
+// runsOf returns the runs s sees (task runs and plain message exchanges), unsorted and
+// unfiltered, from the newest limit*2 root tasks and limit messages.
+func (p *Platform) runsOf(ctx context.Context, s *scope, limit int) ([]*Run, error) {
+	rows, err := p.DB.Pool.Query(ctx, rootsSQL, s.handles, limit*2)
+	if err != nil {
+		return nil, err
+	}
+	var roots []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err == nil {
+			roots = append(roots, id)
+		}
+	}
+	rows.Close()
+
+	runs := []*Run{}
+	if len(roots) > 0 {
+		trees, err := p.runTrees(ctx, roots)
+		if err != nil {
+			return nil, err
+		}
+		var all []string
+		owner := map[string]string{}
+		for root, ids := range trees {
+			all = append(all, ids...)
+			for _, id := range ids {
+				owner[id] = root
+			}
+		}
+		views, err := p.queryTasks(ctx, false, `WHERE t.id = ANY($1)`, all)
+		if err != nil {
+			return nil, err
+		}
+		entries, err := p.Activity.Run(ctx, all)
+		if err != nil {
+			return nil, err
+		}
+		tasksOf, entriesOf, hidden := map[string][]*TaskView{}, map[string][]*activity.Entry{}, map[string]int{}
+		for _, v := range views {
+			root := owner[string(v.ID)]
+			if !s.task(v) {
+				hidden[root]++
+				continue
+			}
+			tasksOf[root] = append(tasksOf[root], v)
+		}
+		for _, e := range entries {
+			if !s.entry(e) {
+				continue
+			}
+			root := owner[e.TaskID]
+			if root == "" {
+				root = owner[e.ParentTaskID]
+			}
+			entriesOf[root] = append(entriesOf[root], e)
+		}
+		for _, root := range roots {
+			ts := tasksOf[root]
+			i := slices.IndexFunc(ts, func(v *TaskView) bool { return string(v.ID) == root })
+			if i < 0 {
+				continue
+			}
+			run := summarize(ts[i], ts, entriesOf[root])
+			run.Hidden = hidden[root]
+			runs = append(runs, run)
+		}
+	}
+	messages, err := p.Activity.Messages(ctx, s.handles, limit)
+	if err != nil {
+		return nil, err
+	}
+	for _, e := range messages {
+		runs = append(runs, messageRun(e))
+	}
+
+	return runs, nil
 }
 
 // handleRun returns everything recorded for the run a task belongs to: {id} is any task

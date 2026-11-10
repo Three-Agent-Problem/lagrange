@@ -1,6 +1,6 @@
-import { Bell, KeyRound, Link2, Mail, Send } from 'lucide-react'
+import { Bell, ExternalLink, KeyRound, Link2, Mail, Send, ShieldCheck } from 'lucide-react'
 import { useEffect, useState, type FormEvent } from 'react'
-import { api, type NotificationSettingsView } from '@/lib/api'
+import { api, type NotificationSettingsView, type TelegramStatus } from '@/lib/api'
 import { Connections } from '@/features/access/Access'
 import { ApiKeys } from '@/features/keys/ApiKeys'
 import { Webhooks } from '@/features/webhooks/Webhooks'
@@ -30,6 +30,7 @@ export function Settings() {
         <Members />
         <Connections />
         <Notifications />
+        <Telegram />
         <ApiKeys />
         <Webhooks />
         <Password />
@@ -116,6 +117,141 @@ function Notifications() {
         {status && <span className={status.ok ? 'text-xs font-semibold text-good' : 'text-xs font-semibold text-bad'}>{status.text}</span>}
       </div>
     </form>
+  )
+}
+
+/** Your own Telegram bot: questions arrive there with buttons to answer them. */
+function Telegram() {
+  const [st, setSt] = useState<TelegramStatus>()
+  const [token, setToken] = useState('')
+  const [link, setLink] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [status, setStatus] = useState<{ ok: boolean; text: string }>()
+
+  useEffect(() => {
+    void api.telegram().then(setSt)
+  }, [])
+  // While a pairing link is out, watch for the chat to pair.
+  useEffect(() => {
+    if (!st?.connected || st.paired || !link) return
+    const t = setInterval(() => void api.telegram().then((s) => s.paired && (setSt(s), setLink(''))), 2000)
+    return () => clearInterval(t)
+  }, [st, link])
+
+  const run = async (what: () => Promise<TelegramStatus | void>, ok?: string) => {
+    setBusy(true)
+    setStatus(undefined)
+    try {
+      const next = await what()
+      if (next) {
+        setSt(next)
+        if (next.pairLink) setLink(next.pairLink)
+      }
+      if (ok) setStatus({ ok: true, text: ok })
+    } catch (e) {
+      setStatus({ ok: false, text: (e as Error).message })
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const connect = (e: FormEvent) => {
+    e.preventDefault()
+    void run(async () => {
+      const next = await api.connectTelegram(token.trim())
+      setToken('')
+      return next
+    })
+  }
+
+  if (!st) return <div className="card h-40 animate-pulse" />
+  return (
+    <div className="card flex flex-col gap-4 p-5">
+      <div className="flex items-center gap-2">
+        <Send size={17} className="text-accent" />
+        <h2 className="font-bold">Telegram</h2>
+        {st.paired && <span className="rounded-full bg-good-soft px-2 py-0.5 text-[11px] font-bold text-good">paired</span>}
+      </div>
+      <p className="flex items-start gap-1.5 text-xs text-muted">
+        <ShieldCheck size={14} className="mt-px shrink-0 text-good" />
+        Your own bot sends what waits on you, and you answer with its buttons: approve, reject, or pick an option. It can’t start, stop or message anything, and typed text goes nowhere.
+      </p>
+
+      {!st.connected && (
+        <form onSubmit={connect} className="flex flex-col gap-3">
+          <ol className="list-decimal space-y-1 pl-5 text-sm">
+            <li>
+              Open{' '}
+              <a className="font-semibold text-accent hover:underline" href="https://t.me/BotFather" target="_blank" rel="noreferrer">
+                @BotFather
+              </a>{' '}
+              in Telegram and send <code className="font-mono">/newbot</code>.
+            </li>
+            <li>Pick a name, then a username that ends in “bot”.</li>
+            <li>Paste the token it sends you here. Keep it secret: it works like a password for the bot.</li>
+          </ol>
+          <div className="flex flex-wrap gap-2">
+            <input className="input min-w-0 flex-1 font-mono" type="password" autoComplete="off" placeholder="123456789:AA…" value={token} onChange={(e) => setToken(e.target.value)} />
+            <Button type="submit" disabled={busy || !token.trim()}>
+              Connect
+            </Button>
+          </div>
+        </form>
+      )}
+
+      {st.connected && !st.paired && (
+        <div className="flex flex-col gap-2 text-sm">
+          <p>
+            Connected to <span className="font-semibold">@{st.botUsername}</span>. Now open it and tap <b>Start</b>: that pairs it with your chat.
+          </p>
+          <div className="flex flex-wrap items-center gap-2">
+            {link ? (
+              <a href={link} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 rounded-lg bg-accent px-3 py-1.5 text-xs font-bold text-accent-ink shadow-card">
+                <ExternalLink size={13} /> Open @{st.botUsername}
+              </a>
+            ) : (
+              <Button disabled={busy} onClick={() => void run(api.pairTelegram)}>
+                Make a pairing link
+              </Button>
+            )}
+            {link && <span className="text-xs text-muted">The link works once, for 10 minutes. Waiting for you to tap Start…</span>}
+          </div>
+        </div>
+      )}
+
+      {st.paired && (
+        <div className="flex flex-col gap-3 text-sm">
+          <p>
+            <span className="font-semibold">@{st.botUsername}</span> talks to <span className="font-semibold">@{st.chatUsername || 'you'}</span>
+            {st.mutedUntil && <span className="ml-2 text-xs text-muted">muted until {new Date(st.mutedUntil).toLocaleTimeString()}</span>}
+          </p>
+          <label className="flex flex-col gap-1 text-xs font-semibold text-muted">
+            Send me
+            <select className="input" value={st.level} disabled={busy} onChange={(e) => void run(() => api.setTelegramLevel(e.target.value as 'questions' | 'milestones'), 'Saved.')}>
+              <option value="milestones">Questions, plus runs’ news and when they finish</option>
+              <option value="questions">Only questions for me</option>
+            </select>
+          </label>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button tone="good" disabled={busy} icon={<Send size={13} />} onClick={() => void run(api.testTelegram, 'Test sent. Check Telegram.')}>
+              Send a test
+            </Button>
+            <Button disabled={busy} onClick={() => void run(api.pairTelegram)}>
+              Pair another chat
+            </Button>
+            <Button tone="bad" disabled={busy} onClick={() => void run(async () => (await api.disconnectTelegram(), { connected: false, paired: false }), 'Disconnected.')}>
+              Disconnect
+            </Button>
+          </div>
+          {link && (
+            <a href={link} target="_blank" rel="noreferrer" className="text-xs font-semibold text-accent hover:underline">
+              Open @{st.botUsername} in the other chat and tap Start →
+            </a>
+          )}
+        </div>
+      )}
+      {status && <span className={status.ok ? 'text-xs font-semibold text-good' : 'text-xs font-semibold text-bad'}>{status.text}</span>}
+    </div>
   )
 }
 

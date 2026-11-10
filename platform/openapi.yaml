@@ -261,6 +261,45 @@ paths:
                   entries: { type: array, items: { type: object, additionalProperties: true } }
                   exchanges: { type: array, items: { type: object, additionalProperties: true } }
         "404": { $ref: "#/components/responses/Error" }
+  /api/settings/telegram:
+    get:
+      summary: Your Telegram bot connection
+      responses:
+        "200": { description: The connection., content: { application/json: { schema: { $ref: "#/components/schemas/Telegram" } } } }
+    put:
+      summary: Connect a bot (a token from @BotFather); returns the link that pairs it with your chat
+      description: >-
+        The bot only ever answers tasks waiting on you, with buttons (approve, reject, a form's
+        options), and reads your waiting tasks and runs. It can't start, cancel or message anything.
+      requestBody:
+        required: true
+        content: { application/json: { schema: { type: object, required: [token], properties: { token: { type: string } } } } }
+      responses:
+        "200": { description: Connected; open pairLink in Telegram., content: { application/json: { schema: { $ref: "#/components/schemas/Telegram" } } } }
+        "400": { $ref: "#/components/responses/Error" }
+    delete:
+      summary: Disconnect the bot
+      responses:
+        "204": { description: Disconnected. }
+  /api/settings/telegram/pair:
+    post:
+      summary: A new pairing link (works once, for 10 minutes)
+      responses:
+        "200": { description: The link., content: { application/json: { schema: { $ref: "#/components/schemas/Telegram" } } } }
+  /api/settings/telegram/level:
+    put:
+      summary: What the bot sends besides questions
+      requestBody:
+        required: true
+        content: { application/json: { schema: { type: object, required: [level], properties: { level: { type: string, enum: [questions, milestones] } } } } }
+      responses:
+        "200": { description: The connection., content: { application/json: { schema: { $ref: "#/components/schemas/Telegram" } } } }
+  /api/settings/telegram/test:
+    post:
+      summary: Send a test message to the paired chat
+      responses:
+        "204": { description: Sent. }
+        "409": { $ref: "#/components/responses/Error" }
   /api/webhooks:
     get:
       summary: List the workspace's webhooks (admin)
@@ -473,4 +512,29 @@ components:
         updatedAt: { type: string, format: date-time }
         cost: { type: number, description: "What the run's agents reported spending on it (usage entries)." }
         currency: { type: string }
+        report: { $ref: "#/components/schemas/Report" }
       additionalProperties: true
+    Report:
+      type: object
+      description: "A run's latest situation report (https://threeagents.dev/ext/report), published by its root task's agent."
+      properties:
+        headline: { type: string }
+        status: { type: string }
+        progress: { type: object, properties: { done: { type: integer }, total: { type: integer } } }
+        built: { type: array, items: { type: object, properties: { title: { type: string }, detail: { type: string } } } }
+        stats: { type: array, items: { type: object, properties: { label: { type: string }, value: { type: string } } } }
+        outcome: { type: string, description: "How the run ended; set on the final report." }
+        notice: { type: string, description: "Forwarded to whoever started the run (Telegram)." }
+        at: { type: string, format: date-time }
+    Telegram:
+      type: object
+      description: Your Telegram bot connection. The token is never returned.
+      properties:
+        connected: { type: boolean }
+        botUsername: { type: string }
+        paired: { type: boolean }
+        chatUsername: { type: string }
+        pairLink: { type: string, description: "Opens the bot with a fresh pairing code; only right after it is made." }
+        pairExpiresAt: { type: string, format: date-time }
+        level: { type: string, enum: [questions, milestones] }
+        mutedUntil: { type: string, format: date-time }

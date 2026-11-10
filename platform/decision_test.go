@@ -18,7 +18,9 @@ func TestDecisionData(t *testing.T) {
 		{approval, "approve", map[string]any{"approved": true}},
 		{approval, "reject", map[string]any{"approved": false}},
 		{approval, "", nil},
-		{form, "approve", nil},
+		{form, "approve", map[string]any{"approved": true}},
+		{&jsonschema.Schema{Type: "object", Properties: form.Properties, Required: []string{"approved", "note"}}, "approve", nil},
+		{&jsonschema.Schema{Type: "object", Properties: map[string]*jsonschema.Schema{"a": {Type: "boolean"}, "b": {Type: "boolean"}}}, "approve", nil},
 		{&jsonschema.Schema{Type: "object", Properties: map[string]*jsonschema.Schema{"size": {Type: "string"}}}, "approve", nil},
 		{nil, "approve", nil},
 	} {

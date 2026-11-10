@@ -178,6 +178,8 @@ function Row({ w, now, name, onChange }: { w: Wait; now: number; name: (h: strin
             taskId={w.task.id}
             mode={w.task.recipient === w.who ? 'person' : 'sender'}
             schema={w.task.input?.schema}
+            questions={w.task.questions}
+            approval={w.task.approval}
             compact
             onDone={() => {
               setAnswering(false)

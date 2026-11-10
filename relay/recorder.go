@@ -14,6 +14,7 @@ import (
 	"github.com/three-agent-problem/lagrange/activity"
 	"github.com/three-agent-problem/lagrange/code"
 	"github.com/three-agent-problem/lagrange/directory"
+	"github.com/three-agent-problem/lagrange/report"
 )
 
 // recorder writes a task's events to the activity log and its link on creation.
@@ -153,6 +154,10 @@ func (rec *recorder) record(ev a2a.Event) {
 				// A commit: its description, not the patch, which stays in the task.
 				e.Summary = "commit " + c.Summary()
 				e.Data["commit"] = c.Map()
+			} else if r, ok := report.Find(ev.Artifact.Parts); ok {
+				// A situation report (lagrange/report): the run's latest one is in its entries.
+				e.Summary = "report: " + r.Headline
+				e.Data["report"] = r.Map()
 			} else if c := Preview(ev.Artifact.Parts, 4096); c != "" {
 				e.Data["content"] = c
 			}

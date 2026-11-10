@@ -1,6 +1,7 @@
 import { Check, Send, X } from 'lucide-react'
 import { useState, type FormEvent } from 'react'
-import { api, type Answer, type JSONSchema } from '@/lib/api'
+import { api, type Answer, type AskQuestion, type JSONSchema } from '@/lib/api'
+import { formatAnswers, toggle } from '@/lib/ask'
 import { cn } from '@/lib/cn'
 import { formData, formFields } from '@/lib/schemaForm'
 
@@ -10,6 +11,10 @@ type Props = {
   mode: 'person' | 'sender'
   /** A structured input request, when the agent sent a schema. */
   schema?: JSONSchema
+  /** Multiple-choice questions (lagrange/ask), answered as one line per question. */
+  questions?: AskQuestion[]
+  /** The task asks to approve or reject. */
+  approval?: boolean
   compact?: boolean
   onDone?: () => void
   /** Sends the answer; the default answers as the logged-in person. */
@@ -17,7 +22,72 @@ type Props = {
 }
 
 /** Answers a task that waits for input: approve or reject, a structured form, or text. */
-export function AnswerForm({ taskId, mode, schema, compact, onDone, send = (a) => api.answer(taskId, a) }: Props) {
+export function AnswerForm({ taskId, mode, schema, questions, approval, compact, onDone, send = (a) => api.answer(taskId, a) }: Props) {
+  if (questions?.length && !schema) return <QuestionsForm questions={questions} compact={compact} onDone={onDone} send={send} />
+  return <PlainForm taskId={taskId} mode={approval ? 'person' : mode} schema={schema} compact={compact} onDone={onDone} send={send} />
+}
+
+/** Each question's options as chips to pick, and a line for your own words. */
+function QuestionsForm({ questions, compact, onDone, send }: { questions: AskQuestion[]; compact?: boolean; onDone?: () => void; send: (a: Answer) => Promise<void> }) {
+  const [picks, setPicks] = useState<number[][]>([])
+  const [other, setOther] = useState<string[]>([])
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const submit = async (e: FormEvent) => {
+    e.preventDefault()
+    setBusy(true)
+    setError('')
+    try {
+      await send({ text: formatAnswers(questions, picks, other) })
+      onDone?.()
+    } catch (err) {
+      setError((err as Error).message)
+    } finally {
+      setBusy(false)
+    }
+  }
+  const answered = questions.every((_, i) => (picks[i]?.length ?? 0) > 0 || (other[i] ?? '').trim())
+  return (
+    <form onSubmit={submit} className={cn('nodrag nopan flex flex-col gap-3', compact && 'gap-2')} onClick={(e) => e.stopPropagation()}>
+      {questions.map((q, qi) => (
+        <fieldset key={qi} className="flex flex-col gap-1.5">
+          <legend className="text-xs font-semibold">
+            {q.header && <span className="mr-1.5 rounded bg-surface-2 px-1.5 py-0.5 font-mono text-[10px] uppercase text-muted">{q.header}</span>}
+            {q.question}
+            {q.multi_select && <span className="ml-1 font-normal text-muted">(pick any)</span>}
+          </legend>
+          <div className="flex flex-wrap gap-1.5">
+            {q.options.map((o, oi) => {
+              const on = picks[qi]?.includes(oi)
+              return (
+                <button
+                  key={oi}
+                  type="button"
+                  title={o.description}
+                  aria-pressed={on}
+                  onClick={() => setPicks(toggle(questions, picks, qi, oi))}
+                  className={cn('rounded-lg border px-2.5 py-1 text-xs font-semibold transition', on ? 'border-accent bg-accent text-accent-ink' : 'border-line hover:bg-surface-2')}
+                >
+                  {on && <Check size={12} strokeWidth={3} className="mr-1 inline" />}
+                  {o.label}
+                </button>
+              )
+            })}
+          </div>
+          <input className="input" placeholder="Or in your own words…" value={other[qi] ?? ''} onChange={(e) => setOther(Object.assign([...other], { [qi]: e.target.value }))} />
+        </fieldset>
+      ))}
+      <div>
+        <Button tone="accent" type="submit" disabled={busy || !answered} icon={<Send size={13} />}>
+          Send answers
+        </Button>
+      </div>
+      {error && <p className="text-xs font-semibold text-bad">{error}</p>}
+    </form>
+  )
+}
+
+function PlainForm({ mode, schema, compact, onDone, send }: Omit<Props, 'questions' | 'approval'> & { send: (a: Answer) => Promise<void> }) {
   const [text, setText] = useState('')
   const [values, setValues] = useState<Record<string, string | boolean>>({})
   const [busy, setBusy] = useState(false)

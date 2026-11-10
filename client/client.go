@@ -15,6 +15,8 @@ import (
 	"time"
 
 	"github.com/a2aproject/a2a-go/v2/a2a"
+
+	"github.com/three-agent-problem/lagrange/report"
 )
 
 // Client calls one server as one key.
@@ -303,6 +305,8 @@ type Run struct {
 	// Cost is what the run's agents reported spending on it, in Currency.
 	Cost     float64 `json:"cost,omitempty"`
 	Currency string  `json:"currency,omitempty"`
+	// Report is the run's latest situation report (lagrange/report), if it has one.
+	Report *report.Report `json:"report,omitempty"`
 }
 
 // RunFilter narrows Runs. Empty fields don't filter.
@@ -342,4 +346,57 @@ func (c *Client) Run(ctx context.Context, id string) (*RunDetail, error) {
 	var out RunDetail
 	err := c.Do(ctx, http.MethodGet, "/api/runs/"+url.PathEscape(id), nil, &out)
 	return &out, err
+}
+
+// Telegram is the key's person's Telegram bot connection. It never carries the token.
+type Telegram struct {
+	Connected    bool   `json:"connected"`
+	BotUsername  string `json:"botUsername,omitempty"`
+	Paired       bool   `json:"paired"`
+	ChatUsername string `json:"chatUsername,omitempty"`
+	// PairLink opens the bot with a fresh pairing code (only right after Connect or Pair).
+	PairLink      string     `json:"pairLink,omitempty"`
+	PairExpiresAt *time.Time `json:"pairExpiresAt,omitempty"`
+	// Level is "questions" or "milestones".
+	Level      string     `json:"level,omitempty"`
+	MutedUntil *time.Time `json:"mutedUntil,omitempty"`
+}
+
+// Telegram returns the person's Telegram connection.
+func (c *Client) Telegram(ctx context.Context) (*Telegram, error) {
+	var out Telegram
+	err := c.Do(ctx, http.MethodGet, "/api/settings/telegram", nil, &out)
+	return &out, err
+}
+
+// ConnectTelegram checks a bot token from @BotFather, connects the bot (replacing any
+// other) and returns the link that pairs it.
+func (c *Client) ConnectTelegram(ctx context.Context, token string) (*Telegram, error) {
+	var out Telegram
+	err := c.Do(ctx, http.MethodPut, "/api/settings/telegram", map[string]string{"token": token}, &out)
+	return &out, err
+}
+
+// PairTelegram makes a new pairing link.
+func (c *Client) PairTelegram(ctx context.Context) (*Telegram, error) {
+	var out Telegram
+	err := c.Do(ctx, http.MethodPost, "/api/settings/telegram/pair", nil, &out)
+	return &out, err
+}
+
+// SetTelegramLevel sets what the bot sends besides questions: "questions" or "milestones".
+func (c *Client) SetTelegramLevel(ctx context.Context, level string) (*Telegram, error) {
+	var out Telegram
+	err := c.Do(ctx, http.MethodPut, "/api/settings/telegram/level", map[string]string{"level": level}, &out)
+	return &out, err
+}
+
+// TestTelegram sends a test message to the paired chat.
+func (c *Client) TestTelegram(ctx context.Context) error {
+	return c.Do(ctx, http.MethodPost, "/api/settings/telegram/test", nil, nil)
+}
+
+// DisconnectTelegram removes the bot.
+func (c *Client) DisconnectTelegram(ctx context.Context) error {
+	return c.Do(ctx, http.MethodDelete, "/api/settings/telegram", nil, nil)
 }

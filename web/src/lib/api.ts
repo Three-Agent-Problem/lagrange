@@ -158,6 +158,37 @@ export type TaskView = {
   task?: A2ATask
   input?: { id?: string; schema: JSONSchema }
   challenge?: { id: string; integration: string; url: string; expiresAt: string }
+  /** Multiple-choice questions the task asks (lagrange/ask). */
+  questions?: AskQuestion[]
+  /** The task asks to approve or reject. */
+  approval?: boolean
+}
+
+/** A multiple-choice question (https://threeagents.dev/ext/questions). */
+export type AskQuestion = { header?: string; question: string; options: { label: string; description?: string }[]; multi_select?: boolean }
+
+/** A run's situation report (https://threeagents.dev/ext/report). */
+export type Report = {
+  headline: string
+  status?: string
+  progress?: { done: number; total: number }
+  built?: { title: string; detail?: string }[]
+  stats?: { label: string; value: string }[]
+  outcome?: string
+  notice?: string
+  at?: string
+}
+
+/** Your Telegram bot connection; the token is never returned. */
+export type TelegramStatus = {
+  connected: boolean
+  botUsername?: string
+  paired: boolean
+  chatUsername?: string
+  pairLink?: string
+  pairExpiresAt?: string
+  level?: 'questions' | 'milestones'
+  mutedUntil?: string
 }
 
 /** What two addresses said to each other (a and b sorted). */
@@ -260,6 +291,8 @@ export type Run = {
   /** What the run's agents reported spending on it, in `currency`. */
   cost?: number
   currency?: string
+  /** The run's latest situation report, if its agent publishes one. */
+  report?: Report
 }
 
 export type Answer = { text?: string; data?: Record<string, unknown>; decision?: 'reject' }
@@ -363,6 +396,12 @@ export const api = {
   notificationSettings: () => call<NotificationSettingsView>('GET', '/api/settings/notifications'),
   setNotificationSettings: (s: NotificationSettings) => call<NotificationSettingsView>('PUT', '/api/settings/notifications', s),
   testNotification: () => call<void>('POST', '/api/settings/notifications/test', {}),
+  telegram: () => call<TelegramStatus>('GET', '/api/settings/telegram'),
+  connectTelegram: (token: string) => call<TelegramStatus>('PUT', '/api/settings/telegram', { token }),
+  pairTelegram: () => call<TelegramStatus>('POST', '/api/settings/telegram/pair', {}),
+  setTelegramLevel: (level: 'questions' | 'milestones') => call<TelegramStatus>('PUT', '/api/settings/telegram/level', { level }),
+  testTelegram: () => call<void>('POST', '/api/settings/telegram/test', {}),
+  disconnectTelegram: () => call<void>('DELETE', '/api/settings/telegram', {}),
   cancel: (id: string) => call<{ task: A2ATask }>('POST', `/api/tasks/${id}/cancel`, {}),
   send: (m: { to: string; text?: string; data?: Record<string, unknown>; taskId?: string; contextId?: string }) =>
     call<{ result: A2ATask | Message }>('POST', '/api/send', m),

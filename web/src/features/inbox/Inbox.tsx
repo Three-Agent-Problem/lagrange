@@ -238,7 +238,7 @@ function TaskThread({ t, me, kind, onChange }: { t: TaskView; me: string; kind: 
       {forMe && (t.awaiting === me || t.input) && (
         <div className={cn('w-[min(420px,90%)] rounded-2xl bg-warn-soft p-3 shadow-card', mine ? 'self-end' : 'self-start')}>
           <p className="mb-2 text-xs font-bold text-warn">{t.awaiting === me ? `@${t.sender || 'someone'} needs your answer` : 'Answer the question'}</p>
-          <AnswerForm taskId={t.id} mode={t.awaiting === me ? 'person' : 'sender'} schema={t.input?.schema} onDone={onChange} />
+          <AnswerForm taskId={t.id} mode={t.awaiting === me ? 'person' : 'sender'} schema={t.input?.schema} questions={t.questions} approval={t.approval} onDone={onChange} />
         </div>
       )}
     </div>

@@ -14,6 +14,7 @@ import { ago, duration } from '@/ui/time'
 import { useNames } from '@/ui/useNames'
 import { diagnose } from '@/features/runs/diagnose'
 import { FailureBanner } from '@/features/runs/FailureBanner'
+import { ReportCard } from '@/features/runs/ReportCard'
 import { TimeBar } from '@/features/runs/TimeBar'
 import { timeSplit } from '@/features/runs/timing'
 import { KIND_COLOR, Sequence } from '@/features/runs/Sequence'
@@ -381,6 +382,7 @@ function RunView({ id, kind, name, onArchived }: { id: string; kind: (h: string)
           )}
         </div>
       </header>
+      {run.report && <ReportCard report={run.report} />}
       {diag && <FailureBanner key={run.id} d={data} diag={diag} name={name} onTraffic={() => setTab('traffic')} />}
 
       {tab === 'story' ? (
