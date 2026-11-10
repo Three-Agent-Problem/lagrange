@@ -20,7 +20,7 @@ A Lagrange point is where a body can hold still between two others. Lagrange is 
 - **Addresses for agents and people.** `https://<host>/a/<handle>` is a normal A2A endpoint (JSON-RPC at `/a/<handle>/rpc`, HTTP+JSON at `/a/<handle>`, card at `/a/<handle>/.well-known/agent-card.json`). Any A2A client in any language can call it: the official `a2a` CLI and the Python SDK both work as is.
 - **Mailboxes and worker pools.** A message to an agent that is offline or busy waits in its mailbox. Run the same agent twice and the work spreads over both copies; each tunnel declares how many tasks it runs at once.
 - **No deploy for agents.** `lagrange tunnel` connects an agent on your laptop, a server or a GPU box to the platform over one outbound WebSocket. Like ngrok, but the server knows A2A: it fetches the agent's card through the tunnel and publishes it at the address.
-- **Coding agents as addresses.** `lagrange tunnel --acp claude-agent-acp` turns any [Agent Client Protocol](https://agentclientprotocol.com) agent (Claude Code, Gemini CLI, opencode, Codex) into an A2A agent. Its "may I run this?" prompts land in your inbox.
+- **Coding agents as addresses.** `lagrange tunnel --acp claude-agent-acp` turns any [Agent Client Protocol](https://agentclientprotocol.com) agent (Claude Code, Gemini CLI, opencode, Codex) into an A2A agent. Its "may I run this?" prompts land in your inbox, or flags set it up to work alone: a model, tool rules, MCP servers, and a git worktree per conversation.
 - **Anything else as an address.** `--exec "<cmd>"` makes any script an agent, and `--http <url>` makes any webhook one (an n8n, Zapier or Make workflow, a FastAPI route). They get the message as text or JSON and can ask the sender a question back.
 - **People in the loop.** A task sent to a person waits as `INPUT_REQUIRED` in their inbox. When an agent asks its sender a question (with a [structured input](https://github.com/a2aproject/a2a-go/tree/main/a2aext/structuredinput) schema, it becomes a form) the question shows up in the sender's inbox and on the graph, and is answered right there.
 - **Questions reach people where they are.** When a task waits on someone, they get an email (with `LAGRANGE_SMTP_URL`) and/or a Slack message (their own incoming webhook, set in Settings) with the question in plain words and a one-time link. The link opens just that question, on a phone too, and answers it as them without logging in; it works once and expires after 7 days.
@@ -110,6 +110,28 @@ lagrange tunnel --server https://lagrange.example.com --token <token> --exec "py
 # any webhook (n8n, Zapier, Make, your own endpoint): each message is POSTed as JSON
 lagrange tunnel --server https://lagrange.example.com --token <token> --http https://n8n.example.com/webhook/orders --header "X-Key: …"
 ```
+
+### Coding agents: `--acp`
+
+By default an `--acp` agent asks before every tool call, and the question lands in the sender's inbox. These flags set it up for unattended work:
+
+```sh
+lagrange tunnel --address coder --create --acp claude-agent-acp --dir ~/code/app \
+  --model sonnet --allow '*' --deny delete \
+  --per-context worktree \
+  --mcp docs=https://docs.example.com/mcp
+```
+
+| Flag | Does |
+|---|---|
+| `--model M` | The model of every session (`haiku`, `sonnet` or `opus` for `claude-agent-acp`). |
+| `--set id=value` | Any other session setting the agent reports, e.g. `--set mode=plan` (repeatable). |
+| `--caller-settings model` | Lets a sender change these settings per message, with `{"acpSettings": {"model": "opus"}}` in the message metadata. Anything else fails the task. |
+| `--allow kinds`, `--deny kinds` | Approve or reject tool calls by ACP kind without asking: `read`, `edit`, `delete`, `move`, `search`, `execute`, `think`, `fetch`, `other`, or `*`. `--deny` wins. |
+| `--per-context dir\|worktree` | Gives each conversation (A2A context) its own working directory: an empty folder, or a git worktree of `--dir` on the branch `lagrange/<context>`. They live in your cache directory, under `lagrange/contexts/`. |
+| `--mcp name=url` | An MCP server for every session: `name=https://…` for HTTP, `name=command args` for stdio, or the ACP `McpServer` JSON (repeatable). |
+
+The agent's card says how it's set up ("It runs tools without asking. Model: sonnet. Each conversation gets its own git worktree and branch."), so a sender can tell before it calls.
 
 ### Agents that don't speak A2A: `--exec` and `--http`
 

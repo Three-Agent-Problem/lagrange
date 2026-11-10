@@ -29,11 +29,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/a2aproject/a2a-go/v2/a2a"
-	"github.com/a2aproject/a2a-go/v2/a2aext/structuredinput"
-	"github.com/a2aproject/a2a-go/v2/a2asrv"
-	"github.com/a2aproject/a2a-go/v2/integrations/executor/a2aacp"
-
 	"github.com/three-agent-problem/lagrange/client"
 	"github.com/three-agent-problem/lagrange/directory"
 	"github.com/three-agent-problem/lagrange/notify"
@@ -257,6 +252,8 @@ func runTunnel(ctx context.Context, args []string) error {
 	description := fs.String("description", "", "With --exec or --http: what the agent does, for its card and public page.")
 	capacity := fs.Int("capacity", tunnel.DefaultCapacity, "Tasks this copy runs at once.")
 	expose := fs.Bool("expose", false, "Let the server forward raw HTTP for /t/<handle>/... (webhooks) to the agent.")
+	var acpOpts acpOptions
+	acpFlags(fs, &acpOpts)
 	_ = fs.Parse(args)
 
 	cfg, err := loadConfig()
@@ -309,7 +306,8 @@ func runTunnel(ctx context.Context, args []string) error {
 			logger.Warn("nothing answers at "+*to+" yet: start your agent there (the tunnel connects anyway, and tasks fail until it answers)", "error", err)
 		}
 	case *acp != "":
-		h, closeFn, err := acpHandler(ctx, strings.Fields(*acp), *dir, *name, logger)
+		acpOpts.argv, acpOpts.dir, acpOpts.name = strings.Fields(*acp), *dir, *name
+		h, closeFn, err := acpHandler(ctx, &acpOpts, logger)
 		if err != nil {
 			return err
 		}
@@ -383,45 +381,6 @@ func addressToken(ctx context.Context, af apiFlags, cfg *cliConfig, handle strin
 		}
 	}
 	return tok, true, nil
-}
-
-// acpHandler serves a coding agent as an A2A agent, for the tunnel. Its permission
-// prompts become structured input requests, which land in the sender's inbox.
-func acpHandler(ctx context.Context, argv []string, dir, name string, logger *slog.Logger) (http.Handler, func(), error) {
-	exec, err := a2aacp.NewExecutor(ctx, a2aacp.Process{Argv: argv, Dir: dir, Stderr: os.Stderr}, nil)
-	if err != nil {
-		return nil, nil, fmt.Errorf("starting %s: %w", argv[0], err)
-	}
-	if name == "" {
-		name = argv[0]
-	}
-	card := &a2a.AgentCard{
-		Name:        name,
-		Description: "A coding agent (" + strings.Join(argv, " ") + ") connected through a Lagrange tunnel. It asks before running tools.",
-		Version:     "1.0.0",
-		SupportedInterfaces: []*a2a.AgentInterface{
-			a2a.NewAgentInterface("http://agent/rpc", a2a.TransportProtocolJSONRPC),
-		},
-		Capabilities: a2a.AgentCapabilities{
-			Streaming:  true,
-			Extensions: []a2a.AgentExtension{structuredinput.NewExtension("")},
-		},
-		DefaultInputModes:  []string{"text/plain"},
-		DefaultOutputModes: []string{"text/plain"},
-		Skills: []a2a.AgentSkill{{
-			ID: "code", Name: "Code", Description: "Reads, writes and runs code in its workspace.",
-			Tags: []string{"coding", "acp"},
-		}},
-	}
-	h := a2asrv.NewHandler(exec)
-	mux := http.NewServeMux()
-	mux.Handle(a2asrv.WellKnownAgentCardPath, a2asrv.NewStaticAgentCardHandler(card))
-	mux.Handle("/rpc", a2asrv.NewJSONRPCHandler(h))
-	return mux, func() {
-		if err := exec.Close(); err != nil {
-			logger.Warn("stopping the agent", "error", err)
-		}
-	}, nil
 }
 
 func token(ctx context.Context, args []string) error {
