@@ -64,3 +64,29 @@ func (i interceptor) Before(ctx context.Context, req *a2aclient.Request) (contex
 	}
 	return ctx, nil, nil
 }
+
+// TagsKey in a message's metadata holds the sender's tags for it, {"name": "value"}:
+// short strings (up to 16, names up to 64 and values up to 256 characters) that the
+// activity log records with the task, as data.tags of the entry that created it,
+// so any client can group and label tasks (a subtask ID, a ticket, a customer).
+const TagsKey = "https://threeagents.dev/ext/tags/v1"
+
+// Tag puts tags on m, keeping the ones it has. Empty values are left out.
+func Tag(m *a2a.Message, tags map[string]string) {
+	t, _ := m.Metadata[TagsKey].(map[string]any)
+	if t == nil {
+		t = map[string]any{}
+	}
+	for k, v := range tags {
+		if v != "" {
+			t[k] = v
+		}
+	}
+	if len(t) == 0 {
+		return
+	}
+	if m.Metadata == nil {
+		m.Metadata = map[string]any{}
+	}
+	m.Metadata[TagsKey] = t
+}
