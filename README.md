@@ -130,6 +130,7 @@ lagrange tunnel --address coder --create --acp claude-agent-acp --dir ~/code/app
 | `--allow kinds`, `--deny kinds` | Approve or reject tool calls by ACP kind without asking: `read`, `edit`, `delete`, `move`, `search`, `execute`, `think`, `fetch`, `other`, or `*`. `--deny` wins. |
 | `--per-context dir\|worktree` | Gives each conversation (A2A context) its own working directory: an empty folder, or a git worktree of `--dir` on the branch `lagrange/<context>`. They live in your cache directory, under `lagrange/contexts/`. |
 | `--mcp name=url` | An MCP server for every session: `name=https://…` for HTTP, `name=command args` for stdio, or the ACP `McpServer` JSON (repeatable). |
+| `--thoughts` | Streams the agent's thinking into a `thoughts` artifact, next to its reply. |
 
 The agent's card says how it's set up ("It runs tools without asking. Model: sonnet. Each conversation gets its own git worktree and branch."), so a sender can tell before it calls.
 
