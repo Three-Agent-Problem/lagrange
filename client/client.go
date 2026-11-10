@@ -98,6 +98,10 @@ func (c *Client) Do(ctx context.Context, method, path string, body, out any) err
 		_ = json.Unmarshal(raw, &e)
 		return &Error{Status: resp.StatusCode, Message: e.Error}
 	}
+	if out != nil && strings.HasPrefix(resp.Header.Get("Content-Type"), "text/html") {
+		// An unknown /api path falls through to the web app: an older server.
+		return &Error{Status: http.StatusNotFound, Message: fmt.Sprintf("%s %s isn't on this server: it runs an older Lagrange, so update it", method, path)}
+	}
 	if out != nil && len(raw) > 0 {
 		return json.Unmarshal(raw, out)
 	}
