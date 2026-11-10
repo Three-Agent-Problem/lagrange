@@ -2,9 +2,11 @@ package platform_test
 
 import (
 	"context"
+	"fmt"
 	"iter"
 	"math"
 	"net/http"
+	"strings"
 	"testing"
 
 	"github.com/a2aproject/a2a-go/v2/a2a"
@@ -105,20 +107,90 @@ func TestAgentEvents(t *testing.T) {
 	ada := e.login(t, adminEmail, adminPassword)
 	var runs struct {
 		Runs []struct {
-			ID       string  `json:"id"`
-			Cost     float64 `json:"cost"`
-			Currency string  `json:"currency"`
+			ID        string  `json:"id"`
+			ContextID string  `json:"contextId"`
+			Cost      float64 `json:"cost"`
+			Currency  string  `json:"currency"`
 		} `json:"runs"`
 	}
 	ada.do(http.MethodGet, "/api/runs?status=done", nil, http.StatusOK, &runs)
 	costs := map[string]float64{}
 	for _, r := range runs.Runs {
 		costs[r.ID] = r.Cost
-		if r.Currency != "USD" {
-			t.Fatalf("run %s currency %q", r.ID, r.Currency)
+		if r.Currency != "USD" || r.ContextID != first.ContextID {
+			t.Fatalf("run %s: currency %q, context %q (want %q)", r.ID, r.Currency, r.ContextID, first.ContextID)
 		}
 	}
 	if math.Abs(costs[string(first.ID)]-0.5) > 1e-9 || math.Abs(costs[string(second.ID)]-0.5) > 1e-9 {
 		t.Fatalf("run costs = %v (the session spent %.2f in all)", costs, spent)
+	}
+}
+
+// inspector answers with what it got: each part, and the message's metadata.
+func inspector() a2asrv.AgentExecutor {
+	return a2asrv.AgentExecutorFunc(func(ctx context.Context, ec *a2asrv.ExecutorContext) iter.Seq2[a2a.Event, error] {
+		return func(yield func(a2a.Event, error) bool) {
+			var got []string
+			for _, p := range ec.Message.Parts {
+				switch {
+				case p.Text() != "":
+					got = append(got, "text "+p.Text())
+				case p.Raw() != nil:
+					got = append(got, fmt.Sprintf("raw %s %s %d", p.Filename, p.MediaType, len(p.Raw())))
+				case p.URL() != "":
+					got = append(got, fmt.Sprintf("url %s %s %s", p.Filename, p.MediaType, p.URL()))
+				}
+			}
+			if s, ok := ec.Message.Metadata["acpSettings"].(map[string]any); ok {
+				got = append(got, fmt.Sprintf("model %v", s["model"]))
+			}
+			_ = yield(a2a.NewSubmittedTask(ec, ec.Message), nil) &&
+				yield(a2a.NewArtifactEvent(ec, a2a.NewTextPart(strings.Join(got, "; "))), nil) &&
+				yield(a2a.NewStatusUpdateEvent(ec, a2a.TaskStateCompleted, nil), nil)
+		}
+	})
+}
+
+func TestSendFiles(t *testing.T) {
+	e := newEnv(t, "")
+	e.connect(t, "inspector", e.agent(t, "inspector"), agentServer("inspector", inspector()), 2)
+	ada := e.login(t, adminEmail, adminPassword)
+	png := []byte("\x89PNG\r\n\x1a\nrest")
+
+	var sent struct {
+		Result struct{ ID string } `json:"result"`
+	}
+	ada.do(http.MethodPost, "/api/send", map[string]any{
+		"to": "@inspector", "text": "what's on screen?",
+		"files": []map[string]any{
+			{"name": "shot.png", "data": png},
+			{"name": "../../etc/notes", "data": []byte("plain words"), "mediaType": "text/plain"},
+			{"url": "https://example.com/spec.pdf"},
+		},
+		"tags":     map[string]string{"subtask": "S1"},
+		"metadata": map[string]any{"acpSettings": map[string]any{"model": "opus"}},
+	}, http.StatusOK, &sent)
+
+	var task *a2a.Task
+	waitFor(t, "the answer", func() bool {
+		stored, _, err := e.p.Tasks.Load(t.Context(), a2a.TaskID(sent.Result.ID))
+		task = stored.Task
+		return err == nil && task.Status.State == a2a.TaskStateCompleted
+	})
+	want := "text what's on screen?; raw shot.png image/png 12; raw notes text/plain 11; url  application/pdf https://example.com/spec.pdf; model opus"
+	if got := artifactText(t, task); got != want {
+		t.Fatalf("the agent got:\n %s\nwant:\n %s", got, want)
+	}
+	entries, _ := e.p.Activity.Task(t.Context(), sent.Result.ID)
+	if tags, _ := entries[0].Data["tags"].(map[string]any); tags["subtask"] != "S1" {
+		t.Fatalf("first entry = %+v", entries[0])
+	}
+
+	for _, bad := range []map[string]any{
+		{"to": "@inspector", "files": []map[string]any{{"name": "x", "data": png, "url": "https://example.com/x"}}},
+		{"to": "@inspector", "files": []map[string]any{{"name": "x"}}},
+		{"to": "@inspector", "files": []map[string]any{{"url": "file:///etc/passwd"}}},
+	} {
+		ada.do(http.MethodPost, "/api/send", bad, http.StatusBadRequest, nil)
 	}
 }

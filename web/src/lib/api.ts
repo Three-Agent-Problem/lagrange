@@ -236,6 +236,8 @@ export type Exchange = {
 export type Run = {
   /** The root task's ID, or msg-<seq> for a plain message exchange. */
   id: string
+  /** The root task's A2A context. */
+  contextId?: string
   title: string
   /** How it ended, in words; empty while it runs. */
   outcome?: string

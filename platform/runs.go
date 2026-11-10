@@ -27,8 +27,11 @@ import (
 // Run summarizes a run for the runs list.
 type Run struct {
 	// ID is the root task's ID, or msg-<seq> for a plain message exchange.
-	ID    string `json:"id"`
-	Title string `json:"title"`
+	ID string `json:"id"`
+	// ContextID is the root task's A2A context: send into it (POST /api/send with
+	// contextId) to continue the conversation the run started.
+	ContextID string `json:"contextId,omitempty"`
+	Title     string `json:"title"`
 	// Outcome is how the run ended, in words: the root task's last answer, or a plain
 	// message's reply. Empty while it runs.
 	Outcome   string `json:"outcome,omitempty"`
@@ -125,7 +128,7 @@ const rootsSQL = `SELECT t.id FROM tasks t LEFT JOIN task_links l ON l.task_id =
 // summarize builds a run's summary from its tasks (root first) and entries.
 func summarize(root *TaskView, tasks []*TaskView, entries []*activity.Entry) *Run {
 	r := &Run{
-		ID: string(root.ID), Title: root.Summary, Starter: root.Sender, Recipient: root.Recipient,
+		ID: string(root.ID), ContextID: root.ContextID, Title: root.Summary, Starter: root.Sender, Recipient: root.Recipient,
 		State: root.State, Tasks: len(tasks), StartedAt: root.CreatedAt, UpdatedAt: root.UpdatedAt,
 		Waiting: []string{}, Participants: []string{},
 	}
@@ -181,7 +184,7 @@ func interruptedState(s string) bool {
 // messageRun is the run of a plain message exchange.
 func messageRun(e *activity.Entry) *Run {
 	r := &Run{
-		ID: "msg-" + strconv.FormatInt(e.Seq, 10), Title: e.Summary, Starter: e.Sender, Recipient: e.Recipient,
+		ID: "msg-" + strconv.FormatInt(e.Seq, 10), ContextID: e.ContextID, Title: e.Summary, Starter: e.Sender, Recipient: e.Recipient,
 		State: "message", Entries: 1, StartedAt: e.At, UpdatedAt: e.At, Waiting: []string{}, Participants: []string{},
 	}
 	r.Outcome, _ = e.Data["reply"].(string)

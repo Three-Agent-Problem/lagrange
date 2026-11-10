@@ -202,8 +202,24 @@ type Send struct {
 	To        string         `json:"to"`
 	Text      string         `json:"text,omitempty"`
 	Data      map[string]any `json:"data,omitempty"`
+	Files     []File         `json:"files,omitempty"`
 	TaskID    string         `json:"taskId,omitempty"`
 	ContextID string         `json:"contextId,omitempty"`
+	// Tags are recorded with the task in the activity log (data.tags), for clients
+	// to group and label tasks: up to 16 short strings.
+	Tags map[string]string `json:"tags,omitempty"`
+	// Metadata is the message's metadata, e.g. {"acpSettings": {"model": "opus"}}
+	// for a coding agent that lets senders pick its model.
+	Metadata map[string]any `json:"metadata,omitempty"`
+}
+
+// File is a file in a message: its bytes, or a URL the recipient fetches. The
+// request carries the bytes base64-encoded, and is limited to 8 MB.
+type File struct {
+	Name      string `json:"name,omitempty"`
+	MediaType string `json:"mediaType,omitempty"` // guessed from the name or content if empty
+	Data      []byte `json:"data,omitempty"`
+	URL       string `json:"url,omitempty"`
 }
 
 // SendResult is what an address answered: a task to follow, or a plain message.
@@ -271,7 +287,9 @@ func (c *Client) Waiting(ctx context.Context) ([]*Wait, error) {
 
 // Run is a root task and everything it caused.
 type Run struct {
-	ID           string    `json:"id"`
+	ID string `json:"id"`
+	// ContextID is the root task's context: Send into it to continue the conversation.
+	ContextID    string    `json:"contextId,omitempty"`
 	Title        string    `json:"title"`
 	Outcome      string    `json:"outcome,omitempty"`
 	Starter      string    `json:"starter"`
@@ -282,6 +300,9 @@ type Run struct {
 	Tasks        int       `json:"tasks"`
 	StartedAt    time.Time `json:"startedAt"`
 	UpdatedAt    time.Time `json:"updatedAt"`
+	// Cost is what the run's agents reported spending on it, in Currency.
+	Cost     float64 `json:"cost,omitempty"`
+	Currency string  `json:"currency,omitempty"`
 }
 
 // RunFilter narrows Runs. Empty fields don't filter.

@@ -113,8 +113,23 @@ paths:
                 to: { type: string, description: "Address handle, with or without @." }
                 text: { type: string }
                 data: { type: object, additionalProperties: true }
+                files:
+                  type: array
+                  description: Files to send, as A2A file parts. The whole request is limited to 8 MB.
+                  items:
+                    type: object
+                    properties:
+                      name: { type: string }
+                      mediaType: { type: string, description: "Guessed from the name or the content when empty." }
+                      data: { type: string, format: byte, description: "The file's bytes, base64. Give data or url." }
+                      url: { type: string, description: "An http(s) URL the recipient fetches." }
                 taskId: { type: string }
                 contextId: { type: string }
+                tags:
+                  type: object
+                  additionalProperties: { type: string }
+                  description: Recorded with the task in the activity log (data.tags of its first entry). Up to 16.
+                metadata: { type: object, additionalProperties: true, description: "The message's metadata." }
       responses:
         "200":
           description: The A2A result, a task or a message.
@@ -446,6 +461,7 @@ components:
       type: object
       properties:
         id: { type: string }
+        contextId: { type: string, description: "The root task's A2A context: send into it to continue the conversation." }
         title: { type: string }
         outcome: { type: string }
         starter: { type: string }
@@ -455,4 +471,6 @@ components:
         participants: { type: array, items: { type: string } }
         startedAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
+        cost: { type: number, description: "What the run's agents reported spending on it (usage entries)." }
+        currency: { type: string }
       additionalProperties: true

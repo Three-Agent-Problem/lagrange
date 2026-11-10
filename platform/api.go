@@ -9,6 +9,7 @@ import (
 	"io/fs"
 	"mime"
 	"net/http"
+	"net/url"
 	"path"
 	"strconv"
 	"strings"
@@ -550,11 +551,24 @@ type sendBody struct {
 	To        string         `json:"to"`
 	Text      string         `json:"text"`
 	Data      map[string]any `json:"data"`
+	Files     []sendFile     `json:"files"`
 	TaskID    string         `json:"taskId"`
 	ContextID string         `json:"contextId"`
+	// Tags are recorded with the task (relay.TagsKey); Metadata is the message's
+	// metadata, e.g. {"acpSettings": {"model": "opus"}} for a coding agent.
+	Tags     map[string]string `json:"tags"`
+	Metadata map[string]any    `json:"metadata"`
 }
 
-func (b *sendBody) parts() []*a2a.Part {
+// sendFile is a file in a message: its bytes (base64 in JSON) or a URL.
+type sendFile struct {
+	Name      string `json:"name"`
+	MediaType string `json:"mediaType"`
+	Data      []byte `json:"data"`
+	URL       string `json:"url"`
+}
+
+func (b *sendBody) parts() ([]*a2a.Part, error) {
 	var parts []*a2a.Part
 	if t := strings.TrimSpace(b.Text); t != "" {
 		parts = append(parts, a2a.NewTextPart(t))
@@ -562,14 +576,44 @@ func (b *sendBody) parts() []*a2a.Part {
 	if b.Data != nil {
 		parts = append(parts, a2a.NewDataPart(b.Data))
 	}
-	return parts
+	for i, f := range b.Files {
+		var part *a2a.Part
+		switch {
+		case len(f.Data) > 0 && f.URL == "":
+			part = a2a.NewRawPart(f.Data)
+			part.MediaType = f.MediaType
+			if part.MediaType == "" {
+				part.MediaType = mime.TypeByExtension(path.Ext(f.Name))
+			}
+			if part.MediaType == "" {
+				part.MediaType = http.DetectContentType(f.Data)
+			}
+		case f.URL != "" && len(f.Data) == 0:
+			u, err := url.Parse(f.URL)
+			if err != nil || (u.Scheme != "https" && u.Scheme != "http") || u.Host == "" {
+				return nil, fmt.Errorf("files[%d]: url must be http(s)", i)
+			}
+			mt := f.MediaType
+			if mt == "" {
+				mt = mime.TypeByExtension(path.Ext(u.Path))
+			}
+			part = a2a.NewFileURLPart(a2a.URL(f.URL), mt)
+		default:
+			return nil, fmt.Errorf("files[%d]: give data (base64) or url, not both", i)
+		}
+		if f.Name != "" {
+			part.Filename = path.Base(strings.ReplaceAll(f.Name, "\\", "/"))
+		}
+		parts = append(parts, part)
+	}
+	return parts, nil
 }
 
 // handleSend sends a message from me to an address, as a new task or into one of my tasks.
 func (p *Platform) handleSend(w http.ResponseWriter, r *http.Request, me *directory.User, _ *scope) {
 	var body sendBody
 	if err := decode(r, &body); err != nil {
-		apiError(w, http.StatusBadRequest, "send {to, text, data, taskId, contextId}")
+		apiError(w, http.StatusBadRequest, "send {to, text, data, files, taskId, contextId, tags, metadata} (at most 8 MB)")
 		return
 	}
 	body.To = strings.TrimPrefix(strings.TrimSpace(body.To), "@")
@@ -577,7 +621,11 @@ func (p *Platform) handleSend(w http.ResponseWriter, r *http.Request, me *direct
 		apiError(w, http.StatusNotFound, "no such address: @"+body.To)
 		return
 	}
-	parts := body.parts()
+	parts, err := body.parts()
+	if err != nil {
+		apiError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 	if len(parts) == 0 {
 		apiError(w, http.StatusBadRequest, "the message is empty")
 		return
@@ -585,6 +633,19 @@ func (p *Platform) handleSend(w http.ResponseWriter, r *http.Request, me *direct
 	msg := a2a.NewMessage(a2a.MessageRoleUser, parts...)
 	msg.TaskID = a2a.TaskID(body.TaskID)
 	msg.ContextID = body.ContextID
+	if len(body.Metadata) > 0 {
+		msg.Metadata = body.Metadata
+	}
+	if len(body.Tags) > 0 {
+		if msg.Metadata == nil {
+			msg.Metadata = map[string]any{}
+		}
+		tags := map[string]any{}
+		for k, v := range body.Tags {
+			tags[k] = v
+		}
+		msg.Metadata[relay.TagsKey] = tags
+	}
 	res, err := p.A2A.SendMessage(callAs(r.Context(), me.Handle, map[string]any{"kind": directory.KindHuman}), &a2a.SendMessageRequest{
 		Tenant: body.To, Message: msg, Config: &a2a.SendMessageConfig{ReturnImmediately: true},
 	})
@@ -663,7 +724,7 @@ func (p *Platform) answer(ctx context.Context, me *directory.User, s *scope, id 
 			return http.StatusBadRequest, err
 		}
 	} else {
-		parts := (&sendBody{Text: body.Text, Data: body.Data}).parts()
+		parts, _ := (&sendBody{Text: body.Text, Data: body.Data}).parts() // no files: no error
 		if len(parts) == 0 {
 			return http.StatusBadRequest, errors.New("the answer is empty")
 		}

@@ -167,6 +167,8 @@ curl -H "Authorization: Bearer $LAGRANGE_KEY" -H 'Content-Type: application/json
   -d '{"to":"acme-buyer","text":"Order 200 hoodies"}' https://lagrange.example.com/api/send
 ```
 
+`/api/send` also takes `files` (`[{"name": "shot.png", "data": "<base64>"}]` or `[{"url": "https://…"}]`, which become A2A file parts, so a coding agent gets a screenshot as an image), `tags` (recorded with the task, see below), `metadata` (the message's), and `taskId`/`contextId` to continue a task or a conversation. Each run in `/api/runs` carries its root task's `contextId`, so sending into it continues the run's conversation. `lagrange send @x "what's wrong here?" --file shot.png --tag ticket=42` does the same from the shell.
+
 Agents calling other addresses should say who they are, and which task the call is part of, so the graph and the task tree show it. In Go, the [`delegate`](delegate/delegate.go) package does both:
 
 ```go

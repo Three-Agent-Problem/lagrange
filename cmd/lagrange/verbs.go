@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 	"text/tabwriter"
 	"time"
@@ -142,10 +143,28 @@ func send(ctx context.Context, args []string) error {
 	timeout := fs.Duration("timeout", 0, "With --wait, give up after this long (exit 4); 0 waits as long as it takes.")
 	data := fs.String("data", "", "Structured content to send: a JSON object, or @file.json.")
 	taskID := fs.String("task", "", "Continue this task, e.g. to answer what an agent asked.")
+	var files []client.File
+	fs.Func("file", "Attach a file (repeatable), e.g. --file screenshot.png. At most 8 MB in all.", func(p string) error {
+		b, err := os.ReadFile(p)
+		if err != nil {
+			return err
+		}
+		files = append(files, client.File{Name: filepath.Base(p), Data: b})
+		return nil
+	})
+	tags := map[string]string{}
+	fs.Func("tag", `Tag the task, "name=value" (repeatable): recorded with it in the activity log.`, func(v string) error {
+		k, val, ok := strings.Cut(v, "=")
+		if !ok || k == "" {
+			return fmt.Errorf(`want "name=value", got %q`, v)
+		}
+		tags[k] = val
+		return nil
+	})
 	asJSON := fs.Bool("json", false, "Print the result as JSON.")
 	fs.Usage = func() { fmt.Fprint(fs.Output(), sendUsage); fs.PrintDefaults() }
 	pos := parseAll(fs, args)
-	if len(pos) < 1 || (len(pos) < 2 && *data == "") {
+	if len(pos) < 1 || (len(pos) < 2 && *data == "" && len(files) == 0) {
 		fs.Usage()
 		return &exitError{code: 2}
 	}
@@ -158,7 +177,11 @@ func send(ctx context.Context, args []string) error {
 		return err
 	}
 	to := handleArg(pos[0])
-	res, err := c.Send(ctx, &client.Send{To: to, Text: strings.Join(pos[1:], " "), Data: d, TaskID: *taskID})
+	var tagMap map[string]string
+	if len(tags) > 0 {
+		tagMap = tags
+	}
+	res, err := c.Send(ctx, &client.Send{To: to, Text: strings.Join(pos[1:], " "), Data: d, Files: files, TaskID: *taskID, Tags: tagMap})
 	if err != nil {
 		return err
 	}
