@@ -127,3 +127,17 @@ func TestParseUsage(t *testing.T) {
 		t.Fatalf("cost only: %+v %v", u, ok)
 	}
 }
+
+func TestUsageSession(t *testing.T) {
+	c := Converter(nil, Options{Session: func(context.Context, *a2asrv.ExecutorContext) string { return "lead/S1/1" }})
+	ec := &a2asrv.ExecutorContext{TaskID: "t1"}
+	res, err := c.Convert(context.Background(), ec, upd(t, map[string]any{"sessionUpdate": "usage_update", "used": 1000, "size": 2000,
+		"cost": map[string]any{"amount": 0.5, "currency": "USD"}}))
+	if err != nil || res == nil {
+		t.Fatalf("convert: %v %v", res, err)
+	}
+	u, ok := ParseUsage(Find(res.Parts, UsageKey))
+	if !ok || u.Session != "lead/S1/1" || u.Cost.Amount != 0.5 {
+		t.Fatalf("usage = %+v", u)
+	}
+}

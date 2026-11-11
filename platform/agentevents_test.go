@@ -205,3 +205,41 @@ func TestSendFiles(t *testing.T) {
 		ada.do(http.MethodPost, "/api/send", bad, http.StatusBadRequest, nil)
 	}
 }
+
+// TestSessionCost: an agent that continues one session across A2A contexts (Halo's
+// follow-ups and peer questions) names it in its usage reports, and each new context
+// counts only what the session spent since its previous report, not its whole total.
+func TestSessionCost(t *testing.T) {
+	e := newEnv(t, "")
+	ctx := t.Context()
+	var total float64
+	worker := a2asrv.AgentExecutorFunc(func(ctx context.Context, ec *a2asrv.ExecutorContext) iter.Seq2[a2a.Event, error] {
+		return func(yield func(a2a.Event, error) bool) {
+			total += 0.10
+			usage := a2a.NewDataPart(map[string]any{"usage": map[string]any{
+				"used": 1000, "cost": map[string]any{"amount": total, "currency": "USD"}, "session": "sess-1"}})
+			_ = yield(a2a.NewSubmittedTask(ec, ec.Message), nil) &&
+				yield(a2a.NewStatusUpdateEvent(ec, a2a.TaskStateWorking, a2a.NewMessageForTask(a2a.MessageRoleAgent, ec, usage)), nil) &&
+				yield(a2a.NewStatusUpdateEvent(ec, a2a.TaskStateCompleted, nil), nil)
+		}
+	})
+	e.connect(t, "worker", e.agent(t, "worker"), agentServer("worker", worker), 2)
+	c := e.client(t, "worker", e.agent(t, "lead"), "")
+	for i := range 3 {
+		// A new context every time, as a follow-up or a question arrives.
+		task := asTask(t)(c.SendMessage(ctx, &a2a.SendMessageRequest{Message: a2a.NewMessage(a2a.MessageRoleUser, a2a.NewTextPart("go"))}))
+		entries, err := e.p.Activity.Task(ctx, string(task.ID))
+		if err != nil {
+			t.Fatal(err)
+		}
+		var delta any
+		for _, x := range entries {
+			if x.Kind == activity.KindUsage {
+				delta = x.Data["costDelta"]
+			}
+		}
+		if d, ok := delta.(float64); !ok || math.Abs(d-0.10) > 1e-9 {
+			t.Fatalf("task %d: costDelta = %v, want 0.10 (the session's total is %.2f)", i, delta, total)
+		}
+	}
+}

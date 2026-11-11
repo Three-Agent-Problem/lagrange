@@ -311,7 +311,15 @@ func (rec *recorder) costDelta(v map[string]any) (float64, bool) {
 		return 0, false
 	}
 	delta := u.Cost.Amount
-	prev, err := rec.r.Activity.LastUsage(rec.ctx, rec.addr.Handle, rec.ec.ContextID)
+	// The total runs per agent session: the A2A context, unless the report names
+	// a session that spans contexts.
+	var prev *activity.Entry
+	var err error
+	if u.Session != "" {
+		prev, err = rec.r.Activity.LastSessionUsage(rec.ctx, rec.addr.Handle, u.Session)
+	} else {
+		prev, err = rec.r.Activity.LastUsage(rec.ctx, rec.addr.Handle, rec.ec.ContextID)
+	}
 	if err != nil {
 		rec.r.log().Warn("relay: reading the last usage report failed", "error", err)
 		return 0, false

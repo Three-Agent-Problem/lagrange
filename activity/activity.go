@@ -143,6 +143,16 @@ func (l *Log) LastUsage(ctx context.Context, recipient, contextID string) (*Entr
 	return entries[0], nil
 }
 
+// LastSessionUsage returns recipient's latest usage report for an agent session
+// (the report's usage.session), or nil.
+func (l *Log) LastSessionUsage(ctx context.Context, recipient, session string) (*Entry, error) {
+	entries, err := l.query(ctx, `WHERE kind = 'usage' AND recipient = $1 AND data->'usage'->>'session' = $2 ORDER BY seq DESC LIMIT 1`, recipient, session)
+	if err != nil || len(entries) == 0 {
+		return nil, err
+	}
+	return entries[0], nil
+}
+
 // Last returns the latest seq, or 0.
 func (l *Log) Last(ctx context.Context) (int64, error) {
 	var seq int64

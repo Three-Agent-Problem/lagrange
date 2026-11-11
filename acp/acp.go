@@ -49,6 +49,10 @@ type Options struct {
 	// Thoughts streams the agent's thinking into the thoughts artifact. Each
 	// chunk is an event, so it costs activity log space.
 	Thoughts bool
+	// Session returns the key of the agent session a task runs in, for usage
+	// reports (Usage.Session). Leave it nil when every A2A context has its own
+	// session, which is a2aacp's default.
+	Session func(ctx context.Context, ec *a2asrv.ExecutorContext) string
 }
 
 // Converter wraps next (a2aacp.ConvertUpdate if nil) with Lagrange's conventions.
@@ -128,7 +132,11 @@ func (c *converter) Convert(ctx context.Context, ec *a2asrv.ExecutorContext, u a
 		return res, nil
 
 	case "usage_update":
-		res := usageResult(raw)
+		session := ""
+		if c.o.Session != nil {
+			session = c.o.Session(ctx, ec)
+		}
+		res := usageResult(raw, session)
 		if res == nil {
 			return nil, nil
 		}

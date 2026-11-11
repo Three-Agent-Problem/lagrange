@@ -17,6 +17,11 @@ type Usage struct {
 	// Cost is the session's cost so far (for claude-agent-acp, Claude Code's
 	// estimate at API prices).
 	Cost *Cost `json:"cost,omitempty"`
+	// Session names the agent session Cost totals, when it isn't the A2A context:
+	// an executor that continues one session across contexts (follow-ups, questions
+	// in a new task) sets it (Options.Session), so the platform subtracts the
+	// previous report of the same session, not of the same context.
+	Session string `json:"session,omitempty"`
 }
 
 // Cost is an amount of money.
@@ -27,8 +32,8 @@ type Cost struct {
 
 // usageResult turns a usage_update into a status message with only a usage data
 // part, or nil if it carries nothing.
-func usageResult(raw rawUpdate) *a2aacp.ConverterResult {
-	u := Usage{Used: raw.Used, Size: raw.Size}
+func usageResult(raw rawUpdate, session string) *a2aacp.ConverterResult {
+	u := Usage{Used: raw.Used, Size: raw.Size, Session: session}
 	if len(raw.Cost) > 0 && string(raw.Cost) != "null" {
 		var c Cost
 		if json.Unmarshal(raw.Cost, &c) == nil {
@@ -52,6 +57,9 @@ func (u Usage) Map() map[string]any {
 	}
 	if u.Cost != nil {
 		m["cost"] = map[string]any{"amount": u.Cost.Amount, "currency": u.Cost.Currency}
+	}
+	if u.Session != "" {
+		m["session"] = u.Session
 	}
 	return m
 }
