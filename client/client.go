@@ -16,6 +16,7 @@ import (
 
 	"github.com/a2aproject/a2a-go/v2/a2a"
 
+	"github.com/three-agent-problem/lagrange/activity"
 	"github.com/three-agent-problem/lagrange/report"
 )
 
@@ -343,6 +344,8 @@ func (c *Client) Runs(ctx context.Context, f RunFilter) ([]*Run, error) {
 type RunDetail struct {
 	Run   *Run    `json:"run"`
 	Tasks []*Task `json:"tasks"`
+	// Entries is the run's activity log (see [activity.Overlap]).
+	Entries []*activity.Entry `json:"entries,omitempty"`
 }
 
 // Run returns one run with its tasks.

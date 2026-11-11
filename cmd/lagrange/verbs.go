@@ -9,12 +9,14 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"text/tabwriter"
 	"time"
 
 	"github.com/a2aproject/a2a-go/v2/a2a"
 
+	"github.com/three-agent-problem/lagrange/activity"
 	"github.com/three-agent-problem/lagrange/client"
 )
 
@@ -447,6 +449,7 @@ func run(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("run", flag.ExitOnError)
 	af := addAPIFlags(fs)
 	asJSON := fs.Bool("json", false, "Print JSON.")
+	overlap := fs.Bool("overlap", false, "Show each agent's tool calls and cost, and the tool calls the run repeated.")
 	fs.Usage = func() {
 		fmt.Fprint(fs.Output(), "Usage: lagrange run <id> [flags]\n\nShows a run and its tasks.\n\nFlags:\n")
 		fs.PrintDefaults()
@@ -463,6 +466,13 @@ func run(ctx context.Context, args []string) error {
 	d, err := c.Run(ctx, pos[0])
 	if err != nil {
 		return err
+	}
+	if *overlap {
+		rep := activity.Overlap(d.Entries)
+		if *asJSON {
+			return printJSON(rep)
+		}
+		return printOverlap(rep)
 	}
 	if *asJSON {
 		return printJSON(d)
@@ -488,6 +498,40 @@ func run(ctx context.Context, args []string) error {
 			state += " on " + at(res.WaitingOn)
 		}
 		fmt.Fprintf(tw, "%s%s\t%s\t%s → %s\t%s\n", strings.Repeat("  ", depth[t.ID]), t.ID, state, at(t.Sender), at(t.Recipient), clip(t.Summary, 60))
+	}
+	return tw.Flush()
+}
+
+// printOverlap prints an overlap report: agents, then the repeated tool calls.
+func printOverlap(rep activity.OverlapReport) error {
+	tw := tabwriter.NewWriter(stdout, 0, 0, 2, ' ', 0)
+	fmt.Fprintln(tw, "AGENT\tTOOL CALLS\tCOST")
+	for _, a := range rep.Agents {
+		fmt.Fprintf(tw, "%s\t%d\t$%.2f\n", at(a.Agent), a.Calls, a.Cost)
+	}
+	fmt.Fprintf(tw, "total\t%d\t$%.2f\n", rep.Calls, rep.Cost)
+	if err := tw.Flush(); err != nil {
+		return err
+	}
+	if len(rep.Repeats) == 0 {
+		fmt.Fprintln(stdout, "\nNo repeated tool calls.")
+		return nil
+	}
+	pct := 0
+	if rep.Calls > 0 {
+		pct = rep.RepeatedCalls * 100 / rep.Calls
+	}
+	fmt.Fprintf(stdout, "\n%d of %d tool calls repeat an earlier one (%d%%), about %d output tokens read again (a lower bound).\n\n",
+		rep.RepeatedCalls, rep.Calls, pct, rep.RepeatedTokens)
+	tw = tabwriter.NewWriter(stdout, 0, 0, 2, ' ', 0)
+	fmt.Fprintln(tw, "TIMES\tBY\tKIND\tCALL")
+	for _, r := range rep.Repeats {
+		var by []string
+		for a, n := range r.Agents {
+			by = append(by, fmt.Sprintf("%s×%d", at(a), n))
+		}
+		slices.Sort(by)
+		fmt.Fprintf(tw, "%d\t%s\t%s\t%s\n", r.Times, strings.Join(by, " "), r.Kind, clip(r.Key, 80))
 	}
 	return tw.Flush()
 }
