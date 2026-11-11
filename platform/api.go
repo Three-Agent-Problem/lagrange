@@ -484,7 +484,13 @@ func fillTaskView(v *TaskView, task *a2a.Task) {
 	}
 	if n := len(task.Artifacts); v.Status == "" && n > 0 && task.Status.State.Terminal() {
 		// A task that ends with a result and no closing words: the result says it.
-		v.Status = clip(relay.Describe(&a2a.Message{Parts: task.Artifacts[n-1].Parts}), 600)
+		// A streamed artifact is one part per chunk: join them as they were written.
+		parts := task.Artifacts[n-1].Parts
+		v.Status = relay.ChunkText(parts)
+		if v.Status == "" {
+			v.Status = relay.Describe(&a2a.Message{Parts: parts})
+		}
+		v.Status = clip(v.Status, 600)
 	}
 }
 

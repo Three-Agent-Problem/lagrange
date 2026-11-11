@@ -45,6 +45,11 @@ type Repeat struct {
 // CrossAgent reports whether more than one agent made the call.
 func (r Repeat) CrossAgent() bool { return len(r.Agents) > 1 }
 
+// rereadKinds are the tool call kinds that read something (ACP's kinds): a repeat of
+// one of them reads the same thing again. Edits and coordination tools (kind "other",
+// such as an orchestrator's MCP tools) don't count as repeats.
+var rereadKinds = map[string]bool{"read": true, "search": true, "execute": true, "fetch": true}
+
 // Overlap builds the report from a run's entries (as RunDetail returns them).
 func Overlap(entries []*Entry) OverlapReport {
 	type call struct {
@@ -112,8 +117,8 @@ func Overlap(entries []*Entry) OverlapReport {
 		c := calls[k]
 		agentOf(c.agent).Calls++
 		rep.Calls++
-		if c.key == "" {
-			continue // no input logged: nothing to compare
+		if c.key == "" || !rereadKinds[c.kind] {
+			continue // no input logged, or not a read: nothing to compare
 		}
 		key := c.kind + " " + c.key
 		r := repeats[key]

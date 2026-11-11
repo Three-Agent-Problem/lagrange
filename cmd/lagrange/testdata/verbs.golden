@@ -92,6 +92,10 @@ total  0           $0.00
 No repeated tool calls.
 [exit 0]
 
+$ ada: lagrange run <id2> --knows --json
+[]
+[exit 0]
+
 $ ada: lagrange waiting
 TASK                                  WAITING ON  ASKED BY  SINCE     QUESTION
 <id4>  @bob        @ada      just now  Lunch?

@@ -143,6 +143,7 @@ func TestCLIVerbs(t *testing.T) {
 	tr.run("ada", ada, "runs", "-q", "hoodies")
 	tr.run("ada", ada, "run", hoodies)
 	tr.run("ada", ada, "run", hoodies, "--overlap")
+	tr.run("ada", ada, "run", hoodies, "--knows", "--json")
 	tr.run("ada", ada, "waiting")
 
 	golden := filepath.Join("testdata", "verbs.golden")

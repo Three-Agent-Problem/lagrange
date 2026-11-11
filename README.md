@@ -229,6 +229,7 @@ lagrange waiting --mine                          # what waits on you
 lagrange answer <id> --approve "Ship it."        # or --reject, or --data '{"qty":200}'
 lagrange runs -q PO-123                          # search runs; lagrange run <id> shows one
 lagrange run <id> --overlap                      # per-agent tool calls and cost, and the tool calls agents repeated
+lagrange run <id> --knows                        # who read or changed which files, when, and how full their context is
 ```
 
 `send --wait` waits through questions and approvals addressed to other people, so a deploy job can wait for `@cfo`. The answer goes to stdout and the status to stderr, and `--json` prints the whole result. The exit code tells a script how it went:

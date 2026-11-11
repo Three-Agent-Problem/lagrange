@@ -66,3 +66,13 @@ func TestCapToolCall(t *testing.T) {
 		t.Fatal("a small input was cut")
 	}
 }
+
+func TestChunkText(t *testing.T) {
+	parts := []*a2a.Part{a2a.NewTextPart("I've delegated S1 to ha"), a2a.NewTextPart("iku and I'm wai"), a2a.NewTextPart("ting.\n")}
+	if got := ChunkText(parts); got != "I've delegated S1 to haiku and I'm waiting." {
+		t.Fatalf("ChunkText = %q", got)
+	}
+	if got := ChunkText([]*a2a.Part{a2a.NewDataPart(map[string]any{"k": 1})}); got != "" {
+		t.Fatalf("ChunkText of data = %q", got)
+	}
+}

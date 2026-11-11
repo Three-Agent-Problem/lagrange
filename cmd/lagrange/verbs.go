@@ -450,6 +450,7 @@ func run(ctx context.Context, args []string) error {
 	af := addAPIFlags(fs)
 	asJSON := fs.Bool("json", false, "Print JSON.")
 	overlap := fs.Bool("overlap", false, "Show each agent's tool calls and cost, and the tool calls the run repeated.")
+	knows := fs.Bool("knows", false, "Show what each task of the run read and changed, when it was last active, and how full its context is.")
 	fs.Usage = func() {
 		fmt.Fprint(fs.Output(), "Usage: lagrange run <id> [flags]\n\nShows a run and its tasks.\n\nFlags:\n")
 		fs.PrintDefaults()
@@ -466,6 +467,13 @@ func run(ctx context.Context, args []string) error {
 	d, err := c.Run(ctx, pos[0])
 	if err != nil {
 		return err
+	}
+	if *knows {
+		ks := activity.KnowledgeOf(d.Entries)
+		if *asJSON {
+			return printJSON(ks)
+		}
+		return printKnowledge(ks)
 	}
 	if *overlap {
 		rep := activity.Overlap(d.Entries)
@@ -498,6 +506,31 @@ func run(ctx context.Context, args []string) error {
 			state += " on " + at(res.WaitingOn)
 		}
 		fmt.Fprintf(tw, "%s%s\t%s\t%s → %s\t%s\n", strings.Repeat("  ", depth[t.ID]), t.ID, state, at(t.Sender), at(t.Recipient), clip(t.Summary, 60))
+	}
+	return tw.Flush()
+}
+
+// printKnowledge prints who knows what in a run, most recently active first.
+func printKnowledge(ks []activity.Knowledge) error {
+	tw := tabwriter.NewWriter(stdout, 0, 0, 2, ' ', 0)
+	fmt.Fprintln(tw, "TASK\tAGENT\tACTIVE\tCONTEXT\tFILES (r read, w changed)")
+	for _, k := range ks {
+		var files []string
+		for _, f := range k.Files {
+			mark := ""
+			if f.Read {
+				mark += "r"
+			}
+			if f.Changed {
+				mark += "w"
+			}
+			files = append(files, filepath.Base(f.Path)+" "+mark)
+		}
+		ctx := "-"
+		if k.Context > 0 {
+			ctx = fmt.Sprintf("%dk", (k.Context+500)/1000)
+		}
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\n", k.TaskID, at(k.Agent), ago(k.LastActive), ctx, clip(strings.Join(files, ", "), 100))
 	}
 	return tw.Flush()
 }

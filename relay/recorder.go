@@ -197,6 +197,16 @@ func Text(m *a2a.Message) string {
 	return strings.Join(parts, " ")
 }
 
+// ChunkText joins the text parts of a streamed artifact with nothing between them:
+// each part is a chunk of one text, cut anywhere, even mid-word.
+func ChunkText(parts []*a2a.Part) string {
+	var b strings.Builder
+	for _, p := range parts {
+		b.WriteString(p.Text())
+	}
+	return strings.TrimSpace(b.String())
+}
+
 // Describe summarizes a message for the activity log: its text, or else its data and
 // files, shortened.
 func Describe(m *a2a.Message) string {
