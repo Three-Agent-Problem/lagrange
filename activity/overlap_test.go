@@ -3,6 +3,8 @@ package activity
 import (
 	"strings"
 	"testing"
+
+	"github.com/three-agent-problem/lagrange/acp"
 )
 
 func toolEntry(agent, id, kind string, input any, output string) *Entry {
@@ -38,6 +40,8 @@ func TestOverlap(t *testing.T) {
 		{Kind: KindUsage, Recipient: "w1", Data: map[string]any{"costDelta": 0.5}},
 		{Kind: KindUsage, Recipient: "w1", Data: map[string]any{"costDelta": 0.25}},
 		{Kind: KindUsage, Recipient: "w2", Data: map[string]any{"costDelta": 1.0}},
+		{Kind: KindUsage, Recipient: "w2", Data: map[string]any{"usage": map[string]any{"tokens": map[string]any{"output": 10.0, "cacheRead": 500.0}}}},
+		{Kind: KindUsage, Recipient: "w2", Data: map[string]any{"usage": map[string]any{"tokens": map[string]any{"output": 5.0}}}},
 		{Kind: KindTask, Recipient: "w2", State: "working"}, // no tool call
 		nil,
 	}
@@ -56,6 +60,9 @@ func TestOverlap(t *testing.T) {
 	}
 	if len(rep.Repeats) != 2 || !rep.Repeats[0].CrossAgent() || rep.Repeats[0].Kind != "read" || rep.Repeats[1].CrossAgent() {
 		t.Fatalf("Repeats = %+v, want the cross-agent read first", rep.Repeats)
+	}
+	if want := (acp.Tokens{Output: 15, CacheRead: 500}); rep.Tokens != want || rep.Agents[2].Tokens != want {
+		t.Fatalf("Tokens = %+v, w2 %+v, want %+v", rep.Tokens, rep.Agents[2].Tokens, want)
 	}
 	if len(rep.Agents) != 3 || rep.Agents[1] != (AgentWork{Agent: "w1", Calls: 4, Cost: 0.75}) || rep.Agents[2].Calls != 3 {
 		t.Fatalf("Agents = %+v", rep.Agents)

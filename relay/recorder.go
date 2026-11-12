@@ -280,7 +280,38 @@ func usageSummary(v map[string]any) string {
 	} else if u.Used > 0 {
 		parts = append(parts, fmt.Sprintf("%d tokens", u.Used))
 	}
+	if t := u.Tokens; t != nil {
+		parts = append(parts, "turn: "+TokensText(*t))
+	}
 	return "usage: " + strings.Join(parts, " · ")
+}
+
+// TokensText says t in a few words: "12 in · 340 out · 28k cache read · 1.5k cache write".
+func TokensText(t acp.Tokens) string {
+	var parts []string
+	for _, c := range []struct {
+		n    int64
+		name string
+	}{{t.Input, "in"}, {t.Output, "out"}, {t.CacheRead, "cache read"}, {t.CacheWrite, "cache write"}} {
+		if c.n != 0 {
+			parts = append(parts, CountText(c.n)+" "+c.name)
+		}
+	}
+	return strings.Join(parts, " · ")
+}
+
+// CountText writes n short: 950, 1.5k, 28k, 1.2M.
+func CountText(n int64) string {
+	switch {
+	case n < 1000:
+		return fmt.Sprint(n)
+	case n < 10_000:
+		return strings.TrimSuffix(fmt.Sprintf("%.1f", float64(n)/1000), ".0") + "k"
+	case n < 1_000_000:
+		return fmt.Sprintf("%dk", (n+500)/1000)
+	default:
+		return strings.TrimSuffix(fmt.Sprintf("%.1f", float64(n)/1e6), ".0") + "M"
+	}
 }
 
 // maxToolField caps a tool call's input and output in the activity log.
@@ -316,9 +347,9 @@ func (rec *recorder) costDelta(v map[string]any) (float64, bool) {
 	var prev *activity.Entry
 	var err error
 	if u.Session != "" {
-		prev, err = rec.r.Activity.LastSessionUsage(rec.ctx, rec.addr.Handle, u.Session)
+		prev, err = rec.r.Activity.LastSessionCost(rec.ctx, rec.addr.Handle, u.Session)
 	} else {
-		prev, err = rec.r.Activity.LastUsage(rec.ctx, rec.addr.Handle, rec.ec.ContextID)
+		prev, err = rec.r.Activity.LastCost(rec.ctx, rec.addr.Handle, rec.ec.ContextID)
 	}
 	if err != nil {
 		rec.r.log().Warn("relay: reading the last usage report failed", "error", err)

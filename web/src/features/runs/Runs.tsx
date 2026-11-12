@@ -12,6 +12,7 @@ import { DataChips } from '@/ui/DataView'
 import { StateBadge } from '@/ui/StateBadge'
 import { ago, duration } from '@/ui/time'
 import { useNames } from '@/ui/useNames'
+import { tokensText } from '@/lib/tokens'
 import { diagnose } from '@/features/runs/diagnose'
 import { FailureBanner } from '@/features/runs/FailureBanner'
 import { ReportCard } from '@/features/runs/ReportCard'
@@ -305,6 +306,7 @@ function RunView({ id, kind, name, onArchived }: { id: string; kind: (h: string)
             <p className="mt-0.5 text-xs text-muted">
               {name(run.starter)} → {name(run.recipient)} · {new Date(start).toLocaleString()} · took {duration(split?.segments.length ? split.end - split.start : end - start)} · {steps.length} steps · {data.exchanges.length} HTTP exchanges
               {run.cost ? ` · ${money(run.cost, run.currency)} spent by its agents` : ''}
+              {run.tokens ? ` · tokens: ${tokensText(run.tokens)}` : ''}
               {run.waiting.length > 0 && <b className="text-warn"> · waiting for {run.waiting.map(name).join(', ')}</b>}
             </p>
             {!!run.hidden && (

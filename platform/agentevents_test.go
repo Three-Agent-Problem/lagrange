@@ -12,6 +12,7 @@ import (
 	"github.com/a2aproject/a2a-go/v2/a2a"
 	"github.com/a2aproject/a2a-go/v2/a2asrv"
 
+	"github.com/three-agent-problem/lagrange/acp"
 	"github.com/three-agent-problem/lagrange/activity"
 	"github.com/three-agent-problem/lagrange/code"
 	"github.com/three-agent-problem/lagrange/relay"
@@ -30,6 +31,10 @@ func coder(cost *float64) a2asrv.AgentExecutor {
 				return status(a2a.NewDataPart(map[string]any{"usage": map[string]any{
 					"used": 1000, "size": 200000, "cost": map[string]any{"amount": *cost, "currency": "USD"}}}))
 			}
+			// A turn's tokens, as acp.ReportTokens adds them: not cumulative.
+			tokens := func() bool {
+				return status(a2a.NewDataPart(map[string]any{"usage": map[string]any{"tokens": map[string]any{"output": 100, "cacheRead": 2000}}}))
+			}
 			tool := func(verb, state string, extra map[string]any) bool {
 				tc := map[string]any{"id": "call-1", "title": "go test ./...", "kind": "execute", "status": state}
 				for k, v := range extra {
@@ -40,7 +45,7 @@ func coder(cost *float64) a2asrv.AgentExecutor {
 			_ = yield(a2a.NewSubmittedTask(ec, ec.Message), nil) &&
 				tool("Running", "in_progress", map[string]any{"input": map[string]any{"command": "go test ./..."}}) &&
 				tool("Finished", "completed", map[string]any{"output": "ok  ./..."}) &&
-				usage() && usage() &&
+				usage() && usage() && tokens() &&
 				yield(code.Event(ec, code.Commit{SHA: "3f2a1c9e00", Branch: "lagrange/x", Subject: "fix the tests", Insertions: 4, Deletions: 1,
 					Files: []code.File{{Path: "a.go", Insertions: 4, Deletions: 1}}}, "--- a/a.go\n+++ b/a.go\n"), nil) &&
 				yield(a2a.NewArtifactEvent(ec, a2a.NewTextPart("done")), nil) &&
@@ -106,7 +111,7 @@ func TestAgentEvents(t *testing.T) {
 	if finished == nil || finished.Data["toolCall"].(map[string]any)["output"] != "ok  ./..." {
 		t.Fatalf("finish entry = %+v", finished)
 	}
-	if len(usage) != 2 || usage[1].Summary != "usage: $0.50 · 0% of context" || usage[0].State != "" {
+	if len(usage) != 3 || usage[1].Summary != "usage: $0.50 · 0% of context" || usage[2].Summary != "usage: turn: 100 out · 2k cache read" || usage[0].State != "" {
 		t.Fatalf("usage entries = %+v", usage)
 	}
 	if d0, d1 := usage[0].Data["costDelta"], usage[1].Data["costDelta"]; d0 != 0.25 || d1 != 0.25 {
@@ -118,16 +123,20 @@ func TestAgentEvents(t *testing.T) {
 	ada := e.login(t, adminEmail, adminPassword)
 	var runs struct {
 		Runs []struct {
-			ID        string  `json:"id"`
-			ContextID string  `json:"contextId"`
-			Cost      float64 `json:"cost"`
-			Currency  string  `json:"currency"`
+			ID        string      `json:"id"`
+			ContextID string      `json:"contextId"`
+			Cost      float64     `json:"cost"`
+			Currency  string      `json:"currency"`
+			Tokens    *acp.Tokens `json:"tokens"`
 		} `json:"runs"`
 	}
 	ada.do(http.MethodGet, "/api/runs?status=done", nil, http.StatusOK, &runs)
 	costs := map[string]float64{}
 	for _, r := range runs.Runs {
 		costs[r.ID] = r.Cost
+		if r.Tokens == nil || *r.Tokens != (acp.Tokens{Output: 100, CacheRead: 2000}) {
+			t.Fatalf("run %s: tokens %+v, want each run's own turn", r.ID, r.Tokens)
+		}
 		if r.Currency != "USD" || r.ContextID != first.ContextID {
 			t.Fatalf("run %s: currency %q, context %q (want %q)", r.ID, r.Currency, r.ContextID, first.ContextID)
 		}

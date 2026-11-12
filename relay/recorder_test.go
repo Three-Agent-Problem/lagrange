@@ -48,6 +48,21 @@ func TestUsageOf(t *testing.T) {
 	if s := usageSummary(map[string]any{"used": float64(1200), "cost": map[string]any{"amount": 3.0, "currency": "EUR"}}); s != "usage: 3.00 EUR · 1200 tokens" {
 		t.Fatalf("summary = %q", s)
 	}
+	turn := map[string]any{"tokens": map[string]any{"input": float64(12), "output": float64(340), "cacheRead": float64(28400), "cacheWrite": float64(1500)}}
+	if usageOf(a2a.NewMessage(a2a.MessageRoleAgent, a2a.NewDataPart(map[string]any{"usage": turn}))) == nil {
+		t.Fatal("a tokens-only report isn't usage")
+	}
+	if s := usageSummary(turn); s != "usage: turn: 12 in · 340 out · 28k cache read · 1.5k cache write" {
+		t.Fatalf("summary = %q", s)
+	}
+}
+
+func TestCountText(t *testing.T) {
+	for n, want := range map[int64]string{0: "0", 999: "999", 1000: "1k", 1540: "1.5k", 9999: "10k", 28400: "28k", 999_499: "999k", 1_200_000: "1.2M"} {
+		if got := CountText(n); got != want {
+			t.Errorf("CountText(%d) = %q, want %q", n, got, want)
+		}
+	}
 }
 
 func TestCapToolCall(t *testing.T) {

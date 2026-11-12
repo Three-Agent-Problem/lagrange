@@ -9,7 +9,7 @@ import (
 
 // Usage is an agent's usage report for its session (the A2A context), as the
 // agent sends it: Cost is cumulative over the session, so the session's cost is
-// its latest report.
+// its latest report. Tokens is not: it is what one turn spent (see [Tokens]).
 type Usage struct {
 	// Used is the number of tokens in the context window, Size the window's size.
 	Used int64 `json:"used,omitempty"`
@@ -22,6 +22,43 @@ type Usage struct {
 	// in a new task) sets it (Options.Session), so the platform subtracts the
 	// previous report of the same session, not of the same context.
 	Session string `json:"session,omitempty"`
+	// Tokens is what the turn this report ends spent, when the agent's process is
+	// wrapped with [ReportTokens]. Unlike Cost it is not cumulative: a run's tokens
+	// are the sum of its reports.
+	Tokens *Tokens `json:"tokens,omitempty"`
+}
+
+// Tokens counts the tokens of one turn, from ACP's PromptResponse.usage, as the
+// agent reports them. claude-agent-acp follows Anthropic's API, where Input
+// excludes cache reads and writes, so the four add up to everything the model read
+// and wrote; an agent on OpenAI's convention may count cache reads in Input too.
+type Tokens struct {
+	Input      int64 `json:"input,omitempty"`
+	Output     int64 `json:"output,omitempty"`
+	CacheRead  int64 `json:"cacheRead,omitempty"`
+	CacheWrite int64 `json:"cacheWrite,omitempty"`
+}
+
+// IsZero reports whether every counter is zero.
+func (t Tokens) IsZero() bool { return t == Tokens{} }
+
+// Add adds o to t.
+func (t *Tokens) Add(o Tokens) {
+	t.Input += o.Input
+	t.Output += o.Output
+	t.CacheRead += o.CacheRead
+	t.CacheWrite += o.CacheWrite
+}
+
+// Map returns t as a JSON object.
+func (t Tokens) Map() map[string]any {
+	m := map[string]any{}
+	for k, v := range map[string]int64{"input": t.Input, "output": t.Output, "cacheRead": t.CacheRead, "cacheWrite": t.CacheWrite} {
+		if v != 0 {
+			m[k] = v
+		}
+	}
+	return m
 }
 
 // Cost is an amount of money.
@@ -34,13 +71,19 @@ type Cost struct {
 // part, or nil if it carries nothing.
 func usageResult(raw rawUpdate, session string) *a2aacp.ConverterResult {
 	u := Usage{Used: raw.Used, Size: raw.Size, Session: session}
+	if t, ok := raw.Meta[TokensMeta]; ok {
+		var tk Tokens
+		if json.Unmarshal(t, &tk) == nil && !tk.IsZero() {
+			u.Tokens = &tk
+		}
+	}
 	if len(raw.Cost) > 0 && string(raw.Cost) != "null" {
 		var c Cost
 		if json.Unmarshal(raw.Cost, &c) == nil {
 			u.Cost = &c
 		}
 	}
-	if u.Used == 0 && u.Size == 0 && u.Cost == nil {
+	if u.empty() {
 		return nil
 	}
 	return &a2aacp.ConverterResult{Parts: []*a2a.Part{a2a.NewDataPart(map[string]any{UsageKey: u.Map()})}}
@@ -61,10 +104,17 @@ func (u Usage) Map() map[string]any {
 	if u.Session != "" {
 		m["session"] = u.Session
 	}
+	if u.Tokens != nil {
+		m["tokens"] = u.Tokens.Map()
+	}
 	return m
 }
 
-// ParseUsage reads a usage data part's value ({"used", "size", "cost"}), as
+func (u Usage) empty() bool {
+	return u.Used == 0 && u.Size == 0 && u.Cost == nil && u.Tokens == nil
+}
+
+// ParseUsage reads a usage data part's value ({"used", "size", "cost", "tokens"}), as
 // found in a message or an activity entry's data.
 func ParseUsage(v any) (Usage, bool) {
 	raw, err := json.Marshal(v)
@@ -72,7 +122,7 @@ func ParseUsage(v any) (Usage, bool) {
 		return Usage{}, false
 	}
 	var u Usage
-	if json.Unmarshal(raw, &u) != nil || (u.Used == 0 && u.Size == 0 && u.Cost == nil) {
+	if json.Unmarshal(raw, &u) != nil || u.empty() {
 		return Usage{}, false
 	}
 	return u, true

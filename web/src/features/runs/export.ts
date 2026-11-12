@@ -5,6 +5,7 @@
 // all of its data.
 import type { Run } from '@/lib/api'
 import { reportMarkdown } from '@/lib/ask'
+import { tokensText } from '@/lib/tokens'
 import type { Content, Step } from '@/features/runs/story'
 import type { Split } from '@/features/runs/timing'
 import { duration } from '@/ui/time'
@@ -44,6 +45,7 @@ export function runMarkdown({ run, steps, split, exchanges, name }: RunExport): 
   }
   if (run.participants.length) facts.push(['Participants', run.participants.map(name).join(', ')])
   if (run.cost) facts.push(['Cost', money(run.cost, run.currency)])
+  if (run.tokens) facts.push(['Tokens', tokensText(run.tokens)])
   if (run.waiting.length) facts.push(['Waiting for', run.waiting.map(name).join(', ')])
   if (run.outcome) facts.push(['Outcome', oneLine(run.outcome)])
   for (const [k, v] of facts) out.push(`- **${k}:** ${v}`)

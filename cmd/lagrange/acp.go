@@ -266,7 +266,8 @@ func acpHandler(ctx context.Context, o *acpOptions, logger *slog.Logger) (http.H
 	if err != nil {
 		return nil, nil, err
 	}
-	exec, err := a2aacp.NewExecutor(ctx, a2aacp.Process{Argv: o.argv, Dir: o.dir, Stderr: os.Stderr}, cfg)
+	// ReportTokens adds each turn's tokens to the usage reports.
+	exec, err := a2aacp.NewExecutor(ctx, acp.ReportTokens(a2aacp.Process{Argv: o.argv, Dir: o.dir, Stderr: os.Stderr}), cfg)
 	if err != nil {
 		return nil, nil, fmt.Errorf("starting %s: %w", o.argv[0], err)
 	}

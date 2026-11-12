@@ -134,19 +134,21 @@ func (l *Log) Between(ctx context.Context, a, b string, limit int) ([]*Entry, er
 	return entries, err
 }
 
-// LastUsage returns the latest usage entry of recipient's session contextID, or nil.
-func (l *Log) LastUsage(ctx context.Context, recipient, contextID string) (*Entry, error) {
-	entries, err := l.query(ctx, `WHERE kind = 'usage' AND recipient = $1 AND context_id = $2 ORDER BY seq DESC LIMIT 1`, recipient, contextID)
+// LastCost returns the latest usage entry with a cost of recipient's session
+// contextID, or nil. Reports with only a turn's tokens are skipped: costs are
+// cumulative, so the next cost is counted from the last one.
+func (l *Log) LastCost(ctx context.Context, recipient, contextID string) (*Entry, error) {
+	entries, err := l.query(ctx, `WHERE kind = 'usage' AND recipient = $1 AND context_id = $2 AND data->'usage' ? 'cost' ORDER BY seq DESC LIMIT 1`, recipient, contextID)
 	if err != nil || len(entries) == 0 {
 		return nil, err
 	}
 	return entries[0], nil
 }
 
-// LastSessionUsage returns recipient's latest usage report for an agent session
-// (the report's usage.session), or nil.
-func (l *Log) LastSessionUsage(ctx context.Context, recipient, session string) (*Entry, error) {
-	entries, err := l.query(ctx, `WHERE kind = 'usage' AND recipient = $1 AND data->'usage'->>'session' = $2 ORDER BY seq DESC LIMIT 1`, recipient, session)
+// LastSessionCost returns recipient's latest usage report with a cost for an agent
+// session (the report's usage.session), or nil, as LastCost does.
+func (l *Log) LastSessionCost(ctx context.Context, recipient, session string) (*Entry, error) {
+	entries, err := l.query(ctx, `WHERE kind = 'usage' AND recipient = $1 AND data->'usage'->>'session' = $2 AND data->'usage' ? 'cost' ORDER BY seq DESC LIMIT 1`, recipient, session)
 	if err != nil || len(entries) == 0 {
 		return nil, err
 	}

@@ -86,8 +86,8 @@ TASK                                  STATE              FROM → TO    SUMMARY
 [exit 0]
 
 $ ada: lagrange run <id2> --overlap
-AGENT  TOOL CALLS  COST
-total  0           $0.00
+AGENT  TOOL CALLS  COST   TOKENS
+total  0           $0.00  -
 
 No repeated tool calls.
 [exit 0]

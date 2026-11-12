@@ -16,6 +16,7 @@ import (
 
 	"github.com/a2aproject/a2a-go/v2/a2a"
 
+	"github.com/three-agent-problem/lagrange/acp"
 	"github.com/three-agent-problem/lagrange/activity"
 	"github.com/three-agent-problem/lagrange/report"
 )
@@ -310,6 +311,8 @@ type Run struct {
 	// Cost is what the run's agents reported spending on it, in Currency.
 	Cost     float64 `json:"cost,omitempty"`
 	Currency string  `json:"currency,omitempty"`
+	// Tokens is what the run's agents reported reading and writing, if they report it.
+	Tokens *acp.Tokens `json:"tokens,omitempty"`
 	// Report is the run's latest situation report (lagrange/report), if it has one.
 	Report *report.Report `json:"report,omitempty"`
 }

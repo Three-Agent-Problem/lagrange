@@ -12,6 +12,7 @@ import (
 
 	"github.com/a2aproject/a2a-go/v2/a2a"
 
+	"github.com/three-agent-problem/lagrange/acp"
 	"github.com/three-agent-problem/lagrange/activity"
 	"github.com/three-agent-problem/lagrange/directory"
 	"github.com/three-agent-problem/lagrange/report"
@@ -56,6 +57,9 @@ type Run struct {
 	// lagrange/acp), in Currency. Zero when no agent reports usage.
 	Cost     float64 `json:"cost,omitempty"`
 	Currency string  `json:"currency,omitempty"`
+	// Tokens is what the run's agents reported reading and writing, summed over their
+	// turns (acp.ReportTokens). Nil when no agent reports tokens.
+	Tokens *acp.Tokens `json:"tokens,omitempty"`
 	// Report is the latest situation report the root task published (lagrange/report).
 	Report *report.Report `json:"report,omitempty"`
 }
@@ -161,6 +165,12 @@ func summarize(root *TaskView, tasks []*TaskView, entries []*activity.Entry) *Ru
 	}
 	for _, e := range entries {
 		if e.Kind == activity.KindUsage {
+			if u, ok := acp.ParseUsage(e.Data["usage"]); ok && u.Tokens != nil {
+				if r.Tokens == nil {
+					r.Tokens = &acp.Tokens{}
+				}
+				r.Tokens.Add(*u.Tokens)
+			}
 			if d, ok := e.Data["costDelta"].(float64); ok {
 				r.Cost += d
 				if u, ok := e.Data["usage"].(map[string]any); ok {

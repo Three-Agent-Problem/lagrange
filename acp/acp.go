@@ -7,13 +7,15 @@
 //     status, input, and the output once it finished). The relay records that
 //     part in the activity log.
 //   - Usage: the agent's token and cost reports, as a status message with a
-//     {"usage": {...}} data part (see [Usage]).
+//     {"usage": {...}} data part (see [Usage]). Wrap the agent with
+//     [ReportTokens] to get each turn's tokens too.
 //   - Thoughts: with Options.Thoughts, the agent's thinking streams into the
 //     [ThoughtsArtifact] artifact. Its reply streams into "response" as before.
 //
 // Wrap the converter of your a2aacp.Config with [Converter]:
 //
 //	cfg := &a2aacp.Config{Converter: acp.Converter(nil, acp.Options{Thoughts: true})}
+//	exec, err := a2aacp.NewExecutor(ctx, acp.ReportTokens(a2aacp.Process{Argv: argv}), cfg)
 package acp
 
 import (
@@ -86,6 +88,8 @@ type rawUpdate struct {
 	Used int64           `json:"used"`
 	Size int64           `json:"size"`
 	Cost json.RawMessage `json:"cost"`
+	// Meta carries the turn's tokens (TokensMeta), from ReportTokens.
+	Meta map[string]json.RawMessage `json:"_meta"`
 }
 
 func (c *converter) Convert(ctx context.Context, ec *a2asrv.ExecutorContext, u a2aacp.Update) (*a2aacp.ConverterResult, error) {
@@ -145,8 +149,8 @@ func (c *converter) Convert(ctx context.Context, ec *a2asrv.ExecutorContext, u a
 		same := c.lastUsage[string(ec.TaskID)] == string(b)
 		c.lastUsage[string(ec.TaskID)] = string(b)
 		c.mu.Unlock()
-		if same {
-			return nil, nil
+		if same && raw.Meta[TokensMeta] == nil {
+			return nil, nil // a repeat; a turn's tokens are never one, two turns may spend the same
 		}
 		return res, nil
 

@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"slices"
 	"strings"
+
+	"github.com/three-agent-problem/lagrange/acp"
 )
 
 // OverlapReport says how much work the agents of one run repeated: the same tool
@@ -22,13 +24,17 @@ type OverlapReport struct {
 	RepeatedTokens int `json:"repeatedTokens"`
 	// Cost is the run's total cost from usage reports.
 	Cost float64 `json:"cost"`
+	// Tokens is the run's total tokens from usage reports (acp.ReportTokens); zero
+	// when no agent reports them.
+	Tokens acp.Tokens `json:"tokens"`
 }
 
 // AgentWork is one agent's share of a run.
 type AgentWork struct {
-	Agent string  `json:"agent"`
-	Calls int     `json:"calls"`
-	Cost  float64 `json:"cost"`
+	Agent  string     `json:"agent"`
+	Calls  int        `json:"calls"`
+	Cost   float64    `json:"cost"`
+	Tokens acp.Tokens `json:"tokens"`
 }
 
 // Repeat is one tool call made more than once.
@@ -59,6 +65,7 @@ func Overlap(entries []*Entry) OverlapReport {
 	calls := map[string]*call{} // agent + " " + call id
 	var order []string
 	costs := map[string]float64{}
+	tokens := map[string]acp.Tokens{}
 	for _, e := range entries {
 		if e == nil {
 			continue
@@ -67,6 +74,11 @@ func Overlap(entries []*Entry) OverlapReport {
 		case KindUsage:
 			if d, ok := e.Data["costDelta"].(float64); ok {
 				costs[e.Recipient] += d
+			}
+			if u, ok := acp.ParseUsage(e.Data["usage"]); ok && u.Tokens != nil {
+				t := tokens[e.Recipient]
+				t.Add(*u.Tokens)
+				tokens[e.Recipient] = t
 			}
 		case KindTask:
 			tc, ok := e.Data["toolCall"].(map[string]any)
@@ -110,6 +122,10 @@ func Overlap(entries []*Entry) OverlapReport {
 	for a, c := range costs {
 		agentOf(a).Cost = c
 		rep.Cost += c
+	}
+	for a, t := range tokens {
+		agentOf(a).Tokens = t
+		rep.Tokens.Add(t)
 	}
 	repeats := map[string]*Repeat{}
 	var keys []string

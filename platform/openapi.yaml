@@ -512,6 +512,14 @@ components:
         updatedAt: { type: string, format: date-time }
         cost: { type: number, description: "What the run's agents reported spending on it (usage entries)." }
         currency: { type: string }
+        tokens:
+          type: object
+          description: "What the run's agents reported reading and writing, summed over their turns (agents wrapped with lagrange/acp ReportTokens). For Claude agents input excludes the cache counters."
+          properties:
+            input: { type: integer }
+            output: { type: integer }
+            cacheRead: { type: integer }
+            cacheWrite: { type: integer }
         report: { $ref: "#/components/schemas/Report" }
       additionalProperties: true
     Report:

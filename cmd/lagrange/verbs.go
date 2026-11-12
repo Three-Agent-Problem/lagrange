@@ -16,8 +16,10 @@ import (
 
 	"github.com/a2aproject/a2a-go/v2/a2a"
 
+	"github.com/three-agent-problem/lagrange/acp"
 	"github.com/three-agent-problem/lagrange/activity"
 	"github.com/three-agent-problem/lagrange/client"
+	"github.com/three-agent-problem/lagrange/relay"
 )
 
 // Where the API commands write; tests swap them.
@@ -449,7 +451,7 @@ func run(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("run", flag.ExitOnError)
 	af := addAPIFlags(fs)
 	asJSON := fs.Bool("json", false, "Print JSON.")
-	overlap := fs.Bool("overlap", false, "Show each agent's tool calls and cost, and the tool calls the run repeated.")
+	overlap := fs.Bool("overlap", false, "Show each agent's tool calls, cost and tokens, and the tool calls the run repeated.")
 	knows := fs.Bool("knows", false, "Show what each task of the run read and changed, when it was last active, and how full its context is.")
 	fs.Usage = func() {
 		fmt.Fprint(fs.Output(), "Usage: lagrange run <id> [flags]\n\nShows a run and its tasks.\n\nFlags:\n")
@@ -535,14 +537,22 @@ func printKnowledge(ks []activity.Knowledge) error {
 	return tw.Flush()
 }
 
+// tokensCell is a table cell for t, or "-" when the agent reports no tokens.
+func tokensCell(t acp.Tokens) string {
+	if t.IsZero() {
+		return "-"
+	}
+	return relay.TokensText(t)
+}
+
 // printOverlap prints an overlap report: agents, then the repeated tool calls.
 func printOverlap(rep activity.OverlapReport) error {
 	tw := tabwriter.NewWriter(stdout, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(tw, "AGENT\tTOOL CALLS\tCOST")
+	fmt.Fprintln(tw, "AGENT\tTOOL CALLS\tCOST\tTOKENS")
 	for _, a := range rep.Agents {
-		fmt.Fprintf(tw, "%s\t%d\t$%.2f\n", at(a.Agent), a.Calls, a.Cost)
+		fmt.Fprintf(tw, "%s\t%d\t$%.2f\t%s\n", at(a.Agent), a.Calls, a.Cost, tokensCell(a.Tokens))
 	}
-	fmt.Fprintf(tw, "total\t%d\t$%.2f\n", rep.Calls, rep.Cost)
+	fmt.Fprintf(tw, "total\t%d\t$%.2f\t%s\n", rep.Calls, rep.Cost, tokensCell(rep.Tokens))
 	if err := tw.Flush(); err != nil {
 		return err
 	}

@@ -100,6 +100,18 @@ func TestUsage(t *testing.T) {
 	if res, _ := c.Convert(ctx, ec, upd(t, map[string]any{"sessionUpdate": "usage_update"})); res != nil {
 		t.Fatalf("an empty report was emitted: %+v", res)
 	}
+	// A turn's tokens (ReportTokens), twice the same: two turns, both reported.
+	turn := map[string]any{"sessionUpdate": "usage_update", "_meta": map[string]any{TokensMeta: map[string]any{"output": 40, "cacheRead": 9000}}}
+	for i := range 2 {
+		res, _ := c.Convert(ctx, ec, upd(t, turn))
+		if res == nil {
+			t.Fatalf("turn %d: tokens not reported", i)
+		}
+		u, ok := ParseUsage(Find(res.Parts, UsageKey))
+		if !ok || u.Tokens == nil || *u.Tokens != (Tokens{Output: 40, CacheRead: 9000}) {
+			t.Fatalf("turn %d: usage = %+v", i, u)
+		}
+	}
 }
 
 func TestThoughts(t *testing.T) {

@@ -263,6 +263,14 @@ export type Exchange = {
   error?: string
 }
 
+/** Token counts of a run (lagrange/acp Tokens). For Claude agents `input` excludes the cache counters. */
+export type Tokens = {
+  input?: number
+  output?: number
+  cacheRead?: number
+  cacheWrite?: number
+}
+
 /** One major action: a task nobody delegated, with everything delegated from it. */
 export type Run = {
   /** The root task's ID, or msg-<seq> for a plain message exchange. */
@@ -291,6 +299,8 @@ export type Run = {
   /** What the run's agents reported spending on it, in `currency`. */
   cost?: number
   currency?: string
+  /** What the run's agents reported reading and writing, summed over their turns. */
+  tokens?: Tokens
   /** The run's latest situation report, if its agent publishes one. */
   report?: Report
 }
